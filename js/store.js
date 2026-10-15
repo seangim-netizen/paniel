@@ -74,17 +74,27 @@ class JournalStore {
   loadSettings() {
     try {
       const data = localStorage.getItem(this.settingsKey);
-      if (data) return JSON.parse(data);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.settings && (!parsed.authorName || parsed.authorName === 'Paniel' || parsed.authorName === '김시웅')) {
+          parsed.authorName = window.INITIAL_IMPORTED_DATA.settings.authorName || '최현경';
+          if (window.INITIAL_IMPORTED_DATA.settings.customGroups) {
+            parsed.customGroups = window.INITIAL_IMPORTED_DATA.settings.customGroups;
+          }
+          localStorage.setItem(this.settingsKey, JSON.stringify(parsed));
+        }
+        return parsed;
+      }
       if (window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.settings) {
         return {
-          customGroups: window.INITIAL_IMPORTED_DATA.settings.customGroups || DEFAULT_GROUPS,
-          authorName: window.INITIAL_IMPORTED_DATA.settings.authorName || '김시웅',
+          customGroups: window.INITIAL_IMPORTED_DATA.settings.customGroups || ['Login 온라인', 'Login 주일나눔 온라인1조', 'Login 자매방'],
+          authorName: window.INITIAL_IMPORTED_DATA.settings.authorName || '최현경',
           reminderTime: '21:00'
         };
       }
-      return { customGroups: DEFAULT_GROUPS, reminderTime: '21:00', authorName: '김시웅' };
+      return { customGroups: ['Login 온라인', 'Login 주일나눔 온라인1조', 'Login 자매방'], reminderTime: '21:00', authorName: '최현경' };
     } catch (e) {
-      return { customGroups: DEFAULT_GROUPS, reminderTime: '21:00', authorName: '김시웅' };
+      return { customGroups: ['Login 온라인', 'Login 주일나눔 온라인1조', 'Login 자매방'], reminderTime: '21:00', authorName: '최현경' };
     }
   }
 
