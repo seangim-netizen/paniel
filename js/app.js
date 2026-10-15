@@ -216,9 +216,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateHeaderStreak() {
     const streak = store.calculateStreak();
+    const totalCount = Object.keys(store.journals || {}).length;
     const streakEl = document.getElementById('header-streak-badge');
     if (streakEl) {
-      streakEl.innerHTML = `🔥 <strong>${streak}일</strong><span class="hidden sm:inline"> 연속 동행</span>`;
+      streakEl.title = `현재 연속 일기 작성: ${streak}일 / 전체 동행 일기: ${totalCount}편`;
+      if (streak > 0) {
+        streakEl.innerHTML = `🔥 <strong>연속 ${streak}일</strong><span class="text-xs font-normal opacity-85"> (총 ${totalCount}편)</span>`;
+      } else {
+        streakEl.innerHTML = `🔥 <strong>연속 0일</strong><span class="text-xs font-normal opacity-85"> (총 ${totalCount}편)</span>`;
+      }
     }
   }
 

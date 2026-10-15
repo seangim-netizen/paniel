@@ -340,15 +340,23 @@ class JournalStore {
 
     const todayStr = this.getTodayDateString();
     let streak = 0;
-    let curr = new Date(todayStr);
+    const [y, m, d] = todayStr.split('-').map(Number);
+    let curr = new Date(y, m - 1, d);
 
     // 오늘 작성 안 했으면 어제부터 확인
     if (!this.journals[todayStr]) {
       curr.setDate(curr.getDate() - 1);
     }
 
+    const formatDate = (dateObj) => {
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
     while (true) {
-      const checkStr = curr.toISOString().split('T')[0];
+      const checkStr = formatDate(curr);
       if (this.journals[checkStr]) {
         streak++;
         curr.setDate(curr.getDate() - 1);
