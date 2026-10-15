@@ -95,14 +95,20 @@ def run_import():
             popup = popup_info.value
             popup.wait_for_load_state('networkidle')
 
+            popup.bring_to_front()
+            if popup.locator("a:has-text('다른 계정'), button:has-text('다른 계정')").count() > 0:
+                popup.locator("a:has-text('다른 계정'), button:has-text('다른 계정')").first.click()
+                popup.wait_for_timeout(1000)
+
             # 계정 정보 자동 입력
             print("  - 카카오 계정(indianyell5w@kakao.com) 입력 중...")
             id_input = popup.locator("input[name='loginId'], input[id*='loginId']").first
             pw_input = popup.locator("input[name='password'], input[id*='password']").first
-            id_input.fill('indianyell5w@kakao.com')
-            pw_input.fill('Euro6@11')
-            popup.locator("button[type='submit']").click()
-            popup.wait_for_timeout(2000)
+            if id_input.count() > 0:
+                id_input.fill('indianyell5w@kakao.com')
+                pw_input.fill('Euro6@11')
+                popup.locator("button[type='submit']").click()
+                popup.wait_for_timeout(2000)
         except Exception as e:
             print("  [알림] 팝업 열기/입력 알림:", e)
 

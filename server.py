@@ -58,8 +58,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def handle_sync(self):
         try:
             print(">>> [API] 위드지저스(jwj.kr) 실시간 동기화 요청 수신...")
-            import sync_jwj_diaries
-            result = sync_jwj_diaries.run_import()
+            import sync_paniel
+            result = sync_paniel.run_import()
             
             json_path = os.path.join(DIRECTORY, "jwj_imported_diaries.json")
             with open(json_path, 'r', encoding='utf-8') as f:
