@@ -69,9 +69,15 @@ def run_import():
     print("=" * 65)
 
     with sync_playwright() as p:
-        # 헤드풀(화면 브라우저) 모드로 실행하여 카카오 보안 인증을 사용자가 즉시 확인할 수 있도록 지원
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
+        browser = p.chromium.launch(
+            headless=False,
+            args=['--disable-blink-features=AutomationControlled', '--no-sandbox']
+        )
+        context = browser.new_context(
+            locale='ko-KR',
+            timezone_id='Asia/Seoul'
+        )
+        context.add_init_script("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });")
         page = context.new_page()
 
         print("1. https://jwj.kr 접속 및 카카오 로그인 진행 중...")
@@ -94,7 +100,7 @@ def run_import():
             id_input = popup.locator("input[name='loginId'], input[id*='loginId']").first
             pw_input = popup.locator("input[name='password'], input[id*='password']").first
             id_input.fill('indianyell5w@kakao.com')
-            pw_input.fill('Euro3798@@')
+            pw_input.fill('Euro6@11')
             popup.locator("button[type='submit']").click()
             popup.wait_for_timeout(2000)
         except Exception as e:
@@ -103,7 +109,7 @@ def run_import():
         print("\n⏳ 로그인 대기 중... (카카오 보안 인증 창이 뜨면 화면에서 직접 확인/해결해 주세요)")
 
         user_info = {}
-        for wait_sec in range(180):
+        for wait_sec in range(360):
             try:
                 user_info = page.evaluate('''async () => {
                     try {
