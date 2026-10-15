@@ -1,0 +1,18 @@
+{
+  "name": "개인용 성경앱",
+  "short_name": "성경앱",
+  "description": "오프라인(비행기모드) 및 다국어 대조 낭독을 지원하는 성경",
+  "start_url": "index.html",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fbf6ef",
+  "theme_color": "#8b5a2b",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3004/3004617.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

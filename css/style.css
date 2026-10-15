@@ -1,0 +1,412 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+:root {
+  --primary: #375a43;
+  --primary-light: #52796f;
+  --primary-subtle: #eaf1eb;
+  --accent: #c4824d;
+  --accent-light: #fbeee3;
+  --bg-main: #f8faf8;
+  --card-bg: #ffffff;
+  --border-color: #e5ece5;
+  --text-main: #232c25;
+  --text-muted: #64746b;
+}
+
+body {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f1;
+}
+::-webkit-scrollbar-thumb {
+  background: #c3d4c6;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ab49f;
+}
+
+/* Range input custom styling */
+input[type="range"] {
+  accent-color: var(--primary);
+}
+
+/* Card hover soft shadows */
+.app-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 12px rgba(45, 75, 55, 0.03), 0 1px 3px rgba(45, 75, 55, 0.02);
+  border-radius: 1rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.app-card:hover {
+  box-shadow: 0 8px 24px rgba(45, 75, 55, 0.06), 0 2px 6px rgba(45, 75, 55, 0.03);
+}
+
+/* Button pulse on active */
+button:active {
+  transform: scale(0.98);
+}
+
+/* Yes / No Toggle Button styles */
+.btn-yn {
+  transition: all 0.15s ease-in-out;
+}
+.btn-yn.active-yes {
+  background-color: #375a43 !important;
+  color: #ffffff !important;
+  border-color: #375a43 !important;
+  box-shadow: 0 2px 8px rgba(55, 90, 67, 0.25);
+  font-weight: 700;
+}
+.btn-yn.active-no {
+  background-color: #6b7280 !important;
+  color: #ffffff !important;
+  border-color: #6b7280 !important;
+  box-shadow: 0 2px 6px rgba(107, 114, 128, 0.2);
+  font-weight: 600;
+}
+
+/* Tab Active Indicator & iOS Segmented Pill Styles */
+header {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.nav-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0.6rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 0;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  color: #6b7280;
+  background-color: transparent !important;
+  border-bottom: 2.5px solid transparent;
+  transition: all 0.15s ease-in-out;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav-tab:hover {
+  color: #1f2923;
+  background-color: transparent !important;
+}
+.nav-tab.active {
+  background-color: transparent !important;
+  color: #375a43 !important;
+  border-bottom-color: #375a43 !important;
+  box-shadow: none !important;
+  font-weight: 800;
+}
+.nav-tab svg {
+  transition: transform 0.15s ease;
+}
+.nav-tab:active svg {
+  transform: scale(0.92);
+}
+
+body.theme-dark .nav-tab {
+  color: #9ca3af;
+  background-color: transparent !important;
+  border-bottom-color: transparent;
+}
+body.theme-dark .nav-tab:hover {
+  color: #f3f4f6;
+  background-color: transparent !important;
+}
+body.theme-dark .nav-tab.active {
+  background-color: transparent !important;
+  color: #52b788 !important;
+  border-bottom-color: #52b788 !important;
+  box-shadow: none !important;
+  font-weight: 800;
+}
+body.theme-dark header {
+  background-color: rgba(30, 30, 30, 0.95) !important;
+  border-color: #2d2d2d !important;
+}
+body.theme-dark header nav {
+  background-color: #1e1e1e !important;
+  border-color: #2d2d2d !important;
+}
+
+/* Print styling for printing diary */
+@media print {
+  body {
+    background-color: #ffffff;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .app-card {
+    border: 1px solid #ddd;
+    box-shadow: none;
+  }
+}
+
+/* Sync icon spin animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.spinning {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+/* Search Scope Chips */
+.scope-chip {
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+.scope-chip.active {
+  background-color: var(--primary) !important;
+  color: #ffffff !important;
+  border-color: var(--primary) !important;
+  font-weight: 700;
+}
+
+/* Quick Search Tags */
+.quick-search-tag {
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+.quick-search-tag:hover {
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   🌙 전체 다크 모드 (성경앱과 100% 동기화)
+   ========================================================================== */
+body.theme-dark {
+  --bg-main: #121212;
+  --card-bg: #1e1e1e;
+  --border-color: #2d2d2d;
+  --text-main: #e0e0e0;
+  --text-muted: #9e9e9e;
+  --primary: #52b788;
+  --primary-light: #74c69d;
+  --primary-subtle: #1c2e24;
+  background-color: #121212 !important;
+  color: #e0e0e0 !important;
+}
+
+body.theme-dark header,
+body.theme-dark nav {
+  background-color: #1a1a1a !important;
+  border-color: #2d2d2d !important;
+}
+
+body.theme-dark .app-card,
+body.theme-dark .bg-white {
+  background-color: #1e1e1e !important;
+  border-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+body.theme-dark input,
+body.theme-dark textarea,
+body.theme-dark select {
+  background-color: #161616 !important;
+  color: #e0e0e0 !important;
+  border-color: #333333 !important;
+}
+
+body.theme-dark .text-gray-800,
+body.theme-dark .text-gray-700,
+body.theme-dark .text-gray-900 {
+  color: #e5e5e5 !important;
+}
+
+body.theme-dark .text-gray-500,
+body.theme-dark .text-gray-600 {
+  color: #a3a3a3 !important;
+}
+
+body.theme-dark .bg-gray-50,
+body.theme-dark .bg-gray-100 {
+  background-color: #252525 !important;
+  color: #d4d4d4 !important;
+}
+
+body.theme-dark .bg-gray-100\/70 {
+  background-color: #161616 !important;
+  border-color: #2d2d2d !important;
+}
+
+body.theme-dark .bg-[#f8faf8] {
+  background-color: #161616 !important;
+}
+
+body.theme-dark .border-gray-100,
+body.theme-dark .border-gray-200,
+body.theme-dark .border-gray-200\/70 {
+  border-color: #2d2d2d !important;
+}
+
+body.theme-dark .guide-subtab-btn.bg-white {
+  background-color: #2d3731 !important;
+  color: #74c69d !important;
+}
+
+body.theme-dark .nav-tab {
+  color: #9e9e9e;
+}
+
+body.theme-dark .nav-tab.active {
+  color: #52b788 !important;
+  border-bottom-color: #52b788 !important;
+}
+
+body.theme-dark #preview-formatted-content {
+  background-color: #161616 !important;
+  color: #e0e0e0 !important;
+  border-color: #2d2d2d !important;
+}
+
+body.theme-dark mark {
+  background-color: #78350f !important;
+  color: #fef3c7 !important;
+}
+
+body.theme-dark .bg-emerald-50 {
+  background-color: #1a2e22 !important;
+  color: #a7f3d0 !important;
+}
+
+body.theme-dark .bg-amber-50 {
+  background-color: #2d2013 !important;
+  color: #fde68a !important;
+}
+
+body.theme-dark .border-emerald-100,
+body.theme-dark .border-emerald-200 {
+  border-color: #244431 !important;
+}
+
+body.theme-dark .border-amber-200,
+body.theme-dark .border-amber-200\/80 {
+  border-color: #4b361a !important;
+}
+
+body.theme-dark #btn-theme-toggle {
+  background-color: #2a2a2a !important;
+  color: #f59e0b !important;
+  border-color: #444444 !important;
+}
+
+body.theme-dark #btn-header-search {
+  background-color: #24352a !important;
+  color: #a7f3d0 !important;
+  border-color: #34543f !important;
+}
+
+body.bible-view-active {
+  padding-bottom: 0 !important;
+  overflow: hidden !important;
+}
+
+/* ==================== 화면 글씨 크기 조절 (Font Size Scaling) ==================== */
+html.font-size-small {
+  font-size: 14.5px;
+}
+html.font-size-normal {
+  font-size: 16px;
+}
+html.font-size-large {
+  font-size: 18px;
+}
+html.font-size-xlarge {
+  font-size: 20.5px;
+}
+
+/* Specific content scaling enhancements for high readability */
+html.font-size-small .diary-content-text,
+html.font-size-small #preview-formatted-content,
+html.font-size-small .reading-card-text {
+  font-size: 0.9rem !important;
+  line-height: 1.7 !important;
+}
+
+html.font-size-normal .diary-content-text,
+html.font-size-normal #preview-formatted-content,
+html.font-size-normal .reading-card-text {
+  font-size: 1rem !important;
+  line-height: 1.75 !important;
+}
+
+html.font-size-large .diary-content-text,
+html.font-size-large #preview-formatted-content,
+html.font-size-large .reading-card-text {
+  font-size: 1.125rem !important;
+  line-height: 1.8 !important;
+}
+
+html.font-size-xlarge .diary-content-text,
+html.font-size-xlarge #preview-formatted-content,
+html.font-size-xlarge .reading-card-text {
+  font-size: 1.25rem !important;
+  line-height: 1.85 !important;
+}
+
+/* Font Size Segmented Buttons */
+.font-size-btn {
+  background-color: #ffffff;
+  border: 1px solid #e5ece5;
+  color: #4b5563;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.font-size-btn:hover {
+  background-color: #f0fdf4;
+  border-color: #a7f3d0;
+}
+.font-size-btn.active {
+  background-color: #375a43 !important;
+  color: #ffffff !important;
+  border-color: #375a43 !important;
+  box-shadow: 0 2px 8px rgba(55, 90, 67, 0.25);
+  font-weight: 700 !important;
+}
+.font-size-btn.active span {
+  color: #a7f3d0 !important;
+}
+
+body.theme-dark .font-size-btn {
+  background-color: #242424;
+  border-color: #383838;
+  color: #d1d5db;
+}
+body.theme-dark .font-size-btn:hover {
+  background-color: #2e3831;
+  border-color: #52b788;
+}
+body.theme-dark .font-size-btn.active {
+  background-color: #52b788 !important;
+  color: #121212 !important;
+  border-color: #52b788 !important;
+}
+body.theme-dark .font-size-btn.active span {
+  color: #064e3b !important;
+}
+body.theme-dark #font-preview-sample {
+  color: #e5e5e5 !important;
+}
+
+
+

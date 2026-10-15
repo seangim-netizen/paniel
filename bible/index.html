@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>📖 김시웅 권사 성경통독일기장</title>
+  <link rel="stylesheet" href="style.css?v=20261015_clean">
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+</head>
+<body class="theme-sepia">
+
+  <!-- 앱 헤더 (2단 구조 개편 - 요구사항) -->
+  <header class="app-header">
+    <!-- 1행: 로고, 퀵 네비게이션 및 TTS 재생 바 -->
+    <div class="header-row header-row-top">
+      <div class="header-logo-area">
+        <img src="header_logo.png?v=2" alt="로그인처치" class="header-logo-img">
+      </div>
+      <div class="quick-nav-dropdowns">
+        <select id="quickBookSelect" class="quick-select">
+          <!-- JS에서 책 목록이 주입됩니다 -->
+        </select>
+        <select id="quickChapterSelect" class="quick-select">
+          <!-- JS에서 장 목록이 주입됩니다 -->
+        </select>
+      </div>
+      <div class="header-player" style="display: flex; align-items: center; gap: 6px;">
+        <button id="btnAudioTTSPlay" class="btn-header-player" title="낭독 시작/정지">▶ 재생</button>
+        <a href="index.html" target="_blank" class="btn-header-player" title="새 창으로 성경 열기" style="text-decoration: none; padding: 0 8px; font-size: 0.75rem; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary); display: inline-flex; align-items: center; justify-content: center; height: 32px; border-radius: var(--border-radius); font-weight: bold; cursor: pointer;">↗️ 새창</a>
+      </div>
+    </div>
+    
+    <!-- 2행: 성경 보조 도구 버튼 4개 -->
+    <div class="header-row header-row-bottom">
+      <button id="btnBookSelectorModal" class="btn-header-action" title="성경 목록 모달">성경선택</button>
+      <button id="btnSearch" class="btn-header-action" title="성경 검색">성경검색</button>
+      <button id="btnProgress" class="btn-header-action" title="통독 현황표">통독현황</button>
+      <button id="btnSettings" class="btn-header-action" title="설정">환경설정</button>
+    </div>
+  </header>
+
+  <!-- 대조 모드 역본 표시용 상단 고정 바 -->
+  <div id="translationCompareBar" class="compare-bar hidden">
+    <span class="compare-tag primary-tag">개역개정</span>
+    <span class="compare-divider">vs</span>
+    <span class="compare-tag secondary-tag">NIV</span>
+  </div>
+
+  <!-- 메인 레이아웃: 성경 본문 뷰어 -->
+  <main class="app-content">
+    <div id="bibleViewer" class="bible-viewer">
+      <!-- 구절들이 여기에 렌더링됩니다 -->
+    </div>
+    
+    <!-- 현재 장 통독 완료 체크 영역 -->
+    <div class="read-check-container">
+      <button id="btnMarkChapterRead" class="btn-read-check">현재 장 읽기 완료 ✓</button>
+    </div>
+  </main>
+
+  <!-- 재생 컨트롤 박스 (재생 중에만 표시) -->
+  <div id="ttsControlBox" class="tts-control-box hidden">
+    <button id="btnAudioTTSPrev" class="btn-tts-ctrl" title="이전 구절">⏮ 이전</button>
+    <button id="btnAudioTTSPlayBottom" class="btn-tts-ctrl btn-tts-play" title="재생 / 일시정지">❚❚ 일시정지</button>
+    <button id="btnAudioTTSStop" class="btn-tts-ctrl btn-tts-stop" title="재생 정지">⏹ 정지</button>
+    <button id="btnAudioTTSNext" class="btn-tts-ctrl" title="다음 구절">다음 ⏭</button>
+    <button id="btnAudioTTSSpeed" class="btn-tts-ctrl" title="배속 조절">1.0x</button>
+    <button id="btnAudioTTSRepeat" class="btn-tts-ctrl" title="반복 모드">🔄 연속</button>
+  </div>
+
+  <!-- 하단 퀵 네비게이션 및 컨트롤러 -->
+  <nav class="bottom-nav">
+    <div class="nav-control-group">
+      <button id="btnPrevChapter" class="btn-nav">◀ 이전 장</button>
+      
+      <!-- 역본 선택 셀렉터 -->
+      <div class="translation-selectors">
+        <div class="select-wrapper">
+          <select id="primaryTranslation">
+            <option value="KG" selected>개역개정</option>
+            <option value="SB">새번역</option>
+            <option value="KH">개역한글</option>
+            <option value="HYUNDAI">현대인의 성경</option>
+            <option value="EASY">쉬운성경</option>
+            <option value="NIV">NIV (영어)</option>
+            <option value="NLT">NLT (영어)</option>
+            <option value="NKJV">NKJV (영어)</option>
+            <option value="RSV">RSV (영어)</option>
+          </select>
+        </div>
+        
+        <div class="select-wrapper">
+          <select id="secondaryTranslation">
+            <option value="NONE" selected>대조 없음</option>
+            <option value="KG">개역개정</option>
+            <option value="SB">새번역</option>
+            <option value="KH">개역한글</option>
+            <option value="HYUNDAI">현대인의 성경</option>
+            <option value="EASY">쉬운성경</option>
+            <option value="NIV">NIV (영어)</option>
+            <option value="NLT">NLT (영어)</option>
+            <option value="NKJV">NKJV (영어)</option>
+            <option value="RSV">RSV (영어)</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="btnNextChapter" class="btn-nav">다음 장 ▶</button>
+    </div>
+  </nav>
+
+  <!-- 성경 선택 모달 (보조 수단) -->
+  <div id="bookModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>성경 선택</h3>
+        <button id="btnCloseBookModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-tabs">
+        <button id="tabOT" class="tab-btn active">구약성경</button>
+        <button id="tabNT" class="tab-btn">신약성경</button>
+      </div>
+      <div class="modal-body">
+        <!-- 책 격자 그리드 -->
+        <div id="booksGrid" class="books-grid"></div>
+        <!-- 장 그리드 (책 선택 시 활성화) -->
+        <div id="chaptersView" class="chapters-view hidden">
+          <button id="btnBackToBooks" class="btn-back">◀ 책 목록으로</button>
+          <h4 id="selectedBookTitle" style="margin: 10px 0;">창세기</h4>
+          <div id="chaptersGrid" class="chapters-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 검색 모달 -->
+  <div id="searchModal" class="modal">
+    <div class="modal-content modal-full-height">
+      <div class="modal-header">
+        <h3>성경 검색</h3>
+        <button id="btnCloseSearchModal" class="btn-close">&times;</button>
+      </div>
+      <div class="search-bar-wrapper">
+        <input type="text" id="searchInput" placeholder="검색할 구절 키워드 입력 (예: 태초, 사랑)" autocomplete="off">
+        <button id="btnExecuteSearch" class="btn-search-action">검색</button>
+      </div>
+      <!-- 다중 역본 필터 드롭다운 추가 -->
+      <div class="search-filter-wrapper">
+        <label for="searchTranslationFilter">역본 필터</label>
+        <select id="searchTranslationFilter" class="search-filter-select">
+          <option value="ALL" selected>전체 역본 통합 검색 결과</option>
+          <option value="KG">개역개정</option>
+          <option value="SB">새번역</option>
+          <option value="KH">개역한글</option>
+          <option value="HYUNDAI">현대인의 성경</option>
+          <option value="EASY">쉬운성경</option>
+          <option value="NIV">NIV (영어)</option>
+          <option value="NLT">NLT (영어)</option>
+          <option value="NKJV">NKJV (영어)</option>
+          <option value="RSV">RSV (영어)</option>
+        </select>
+      </div>
+      <div id="searchResultMeta" class="search-result-meta"></div>
+      <div class="modal-body search-results-body">
+        <div id="searchResults" class="search-results-list">
+          <p class="search-placeholder">검색어를 입력하고 검색 버튼을 누르세요.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 통독 현황 현황표 모달 -->
+  <div id="progressModal" class="modal">
+    <div class="modal-content modal-full-height">
+      <div class="modal-header">
+        <h3>통독 현황표</h3>
+        <button id="btnCloseProgressModal" class="btn-close">&times;</button>
+      </div>
+      <div class="progress-summary-bar">
+        <div class="progress-stats">
+          <span>전체 통독률: <strong id="progressPercentage">0.0%</strong></span>
+          <span class="progress-ratio">(<span id="completedChaptersCount">0</span> / 1189장 완료)</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div id="progressBarFill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+        <button id="btnResetHistory" class="btn-reset-history">기록 초기화</button>
+      </div>
+      <div class="modal-body progress-body">
+        <div id="progressBooksContainer" class="progress-books-container">
+          <!-- 책별 장 바둑판들이 생성됩니다 -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 설정 모달 -->
+  <div id="settingsModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>설정</h3>
+        <button id="btnCloseSettingsModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body settings-body">
+        <div class="setting-item">
+          <label>글자 크기</label>
+          <div class="font-size-controls">
+            <button id="btnFontSizeDecrease" class="btn-control">가-</button>
+            <span id="fontSizeDisplay">100%</span>
+            <button id="btnFontSizeIncrease" class="btn-control">가+</button>
+          </div>
+        </div>
+        
+        <div class="setting-item">
+          <label>화면 테마</label>
+          <div class="theme-controls">
+            <button class="theme-btn theme-light-btn" data-theme="theme-light">밝게</button>
+            <button class="theme-btn theme-sepia-btn active" data-theme="theme-sepia">세피아</button>
+            <button class="theme-btn theme-dark-btn" data-theme="theme-dark">어둡게</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label>구절 묵상 메모 관리</label>
+          <p class="setting-desc">구절을 터치하여 개인 메모를 작성할 수 있습니다.</p>
+          <button id="btnExportNotes" class="btn-action">전체 메모 복사/백업</button>
+        </div>
+
+        <div class="setting-item">
+          <label>스마트폰 무선 테스트</label>
+          <p class="setting-desc">동일한 Wi-Fi 환경의 스마트폰으로 아래 주소에 접속하거나 QR코드를 스캔하세요.</p>
+          <div id="mobileTestArea" style="text-align: center; margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 6px; font-size: 0.9rem;">
+            <!-- JS에서 동적 주소 및 QR코드가 렌더링됩니다 -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 구절 메모 모달 -->
+  <div id="noteModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="noteModalTitle">창세기 1장 1절 메모</h3>
+        <button id="btnCloseNoteModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="selectedVerseText" class="selected-verse-text"></p>
+        <textarea id="noteTextarea" placeholder="여기에 묵상한 내용이나 메모를 입력하세요..."></textarea>
+        <div class="modal-actions">
+          <button id="btnDeleteNote" class="btn-danger">삭제</button>
+          <button id="btnSaveNote" class="btn-primary">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 메모 백업 및 조회 모달 (요구사항) -->
+  <div id="backupModal" class="modal">
+    <div class="modal-content modal-full-height">
+      <div class="modal-header">
+        <h3>전체 메모 백업 및 조회</h3>
+        <button id="btnCloseBackupModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 12px; height: 100%;">
+        <p class="setting-desc">작성하신 모든 묵상 메모와 성경 본문이 아래 창에 모아집니다.</p>
+        <textarea id="backupTextarea" readonly style="flex: 1; min-height: 250px; font-family: monospace; font-size: 0.9rem;" placeholder="저장된 메모가 없습니다."></textarea>
+        <div class="modal-actions" style="margin-top: 10px; width: 100%;">
+          <button id="btnCopyBackupText" class="btn-primary" style="width: 100%; padding: 14px; font-size: 1rem;">클립보드 복사</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 토스트 알림 -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- 성경 DB 스크립트 로드 (66권 통합 DB) -->
+  <script src="./bible_db_66.js?v=20261015_clean"></script>
+  
+  <!-- 애플리케이션 로직 -->
+  <script src="app.js?v=20261015_clean"></script>
+</body>
+</html>

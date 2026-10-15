@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>로그인처치 예수동행일기 - Paniel</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/png" href="./assets/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Paniel">
+  <meta name="theme-color" content="#375a43">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body class="bg-[#f8faf8] min-h-screen text-[#232c25] pb-24 sm:pb-12">
+
+  <!-- 상단 네비게이션 헤더 -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#e5ece5]">
+    <div class="max-w-4xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2">
+      <!-- 좌측: 로그인처치 로고 및 타이틀 -->
+      <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+        <img src="./assets/login_church_logo.png" alt="로그인처치" class="h-8 sm:h-9 w-auto object-contain rounded-lg shadow-2xs shrink-0">
+        <div class="flex flex-col justify-center min-w-0">
+          <div class="flex items-center gap-1.5">
+            <h1 class="text-sm sm:text-base font-extrabold text-[#375a43] leading-none tracking-tight">로그인처치</h1>
+            <span class="text-[10px] text-emerald-800 bg-emerald-100/70 border border-emerald-200/80 px-1.5 py-0.5 rounded-full font-semibold leading-none shrink-0">동행일기</span>
+          </div>
+          <span class="text-[10px] sm:text-[11px] text-gray-400 font-medium mt-1 leading-none truncate">Journal with Jesus</span>
+        </div>
+      </div>
+
+      <!-- 우측: 스트릭, 테마 전환, 실시간 동기화 -->
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div id="header-streak-badge" class="px-2 sm:px-2.5 py-1 bg-amber-50 border border-amber-200/80 rounded-full text-xs text-amber-800 font-semibold flex items-center gap-1 shadow-2xs whitespace-nowrap">
+          🔥 <strong>0일</strong><span class="hidden sm:inline"> 연속 동행</span>
+        </div>
+        <button type="button" id="btn-theme-toggle" title="밝게 / 어둡게 테마 전환" class="h-8 sm:h-9 px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200 text-xs sm:text-sm font-semibold rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1">
+          <span id="theme-toggle-icon">🌙</span>
+          <span id="theme-toggle-text" class="hidden sm:inline">어둡게</span>
+        </button>
+        <button type="button" id="btn-header-sync" title="위드지저스 실시간 동기화" class="h-8 sm:h-9 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs sm:text-sm font-semibold rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1">
+          <span class="sync-icon inline-block">🔄</span>
+          <span class="hidden sm:inline">실시간 동기화</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 메인 탭 바 (iOS 세그먼트 스크롤 탭: 글자 줄바꿈 100% 방지 & 깨짐 없는 고선명 SVG 아이콘) -->
+    <nav class="max-w-4xl mx-auto px-1 sm:px-3 flex items-center justify-between border-t border-[#f0f4f0] bg-white/95 overflow-x-auto scrollbar-none">
+      <button type="button" data-tab="write" class="nav-tab active">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+        <span>일기</span>
+      </button>
+      <button type="button" data-tab="search" class="nav-tab">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        <span>검색</span>
+      </button>
+      <button type="button" data-tab="calendar" class="nav-tab">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+        <span>달력</span>
+      </button>
+      <button type="button" data-tab="stats" class="nav-tab">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+        <span>통계</span>
+      </button>
+      <button type="button" data-tab="gratitude" class="nav-tab">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
+        <span>감사</span>
+      </button>
+      <button type="button" data-tab="bible" class="nav-tab">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+        <span>성경</span>
+      </button>
+      <button type="button" data-tab="settings" class="nav-tab">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+        <span>설정</span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- 메인 컨텐츠 영역 -->
+  <main class="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+
+    <!-- ==================== TAB 1: 일기 작성 (Write) ==================== -->
+    <section id="view-write" class="view-section space-y-4">
+      
+      <!-- 기본 정보 카드 (날짜, 제목, 공개, 태그) -->
+      <div class="app-card p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold text-gray-500">날짜</span>
+            <input type="date" id="input-date" class="px-2.5 py-1 text-sm font-medium border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-700 focus:outline-none">
+            <input type="time" id="input-time" class="px-2 py-1 text-xs font-medium border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-700 focus:outline-none">
+            <button type="button" id="btn-go-today" class="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-[11px] font-semibold text-gray-600 rounded-md">오늘</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="btn-copy-share" class="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-medium rounded-lg flex items-center gap-1 transition-all">
+              <span>📋 나눔 양식 복사</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-3.5 space-y-3">
+          <!-- 제목 -->
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">일기 제목</label>
+            <input type="text" id="input-title" class="w-full px-3.5 py-2 text-base font-bold text-gray-800 border border-gray-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none placeholder-gray-300" placeholder="나의 일기(제목을 적어주세요)">
+          </div>
+
+          <!-- 공개 그룹 & 태그 -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div>
+              <span class="block text-xs font-semibold text-gray-500 mb-1.5">공개 나눔방</span>
+              <div id="group-chips-container" class="flex flex-wrap gap-1.5">
+                <!-- 동적 칩 렌더링 -->
+              </div>
+            </div>
+            <div>
+              <span class="block text-xs font-semibold text-gray-500 mb-1.5">태그 (#단어로 입력)</span>
+              <input type="text" id="input-tags" class="w-full px-3 py-1.5 text-xs text-gray-700 border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-700 focus:outline-none" placeholder="#예수동행 #감사 #순종">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 상단 신앙 지표 카드 (Faith Bar) -->
+      <div class="app-card p-4 sm:p-5 bg-linear-to-br from-white to-[#f5f8f5] border-emerald-100">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-bold text-[#375a43] flex items-center gap-1.5">
+            <span>✨ 오늘의 신앙 지표</span>
+          </h3>
+          <button type="button" id="btn-auto-look-calc" class="text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-md border border-emerald-200 transition-all">
+            🎯 점검 기반 자동 추천
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <!-- 말씀읽기 -->
+          <div class="p-2.5 bg-white border border-gray-100 rounded-xl flex flex-col justify-between">
+            <span class="text-xs font-semibold text-gray-500">📖 말씀읽기</span>
+            <div class="flex items-center justify-between mt-2">
+              <button type="button" id="btn-bible-minus" class="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 font-bold text-xs">-</button>
+              <div class="flex items-baseline">
+                <input type="number" id="input-bible" min="0" class="w-10 text-center font-bold text-emerald-900 text-sm focus:outline-none" value="0">
+                <span class="text-xs text-gray-500">장</span>
+              </div>
+              <button type="button" id="btn-bible-plus" class="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 font-bold text-xs">+</button>
+            </div>
+          </div>
+
+          <!-- 예수님 바라보기 % -->
+          <div class="p-2.5 bg-white border border-gray-100 rounded-xl">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-gray-500">👁️ 바라보기</span>
+              <span id="val-look" class="text-xs font-bold text-emerald-800">0%</span>
+            </div>
+            <input type="range" id="input-look" min="0" max="100" step="5" value="0" class="w-full mt-3 cursor-pointer">
+          </div>
+
+          <!-- 순종하기 % -->
+          <div class="p-2.5 bg-white border border-gray-100 rounded-xl">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-gray-500">🕊️ 순종하기</span>
+              <span id="val-obey" class="text-xs font-bold text-amber-800">0%</span>
+            </div>
+            <input type="range" id="input-obey" min="0" max="100" step="5" value="0" class="w-full mt-3 cursor-pointer">
+          </div>
+
+          <!-- 기도 시간 -->
+          <div class="p-2.5 bg-white border border-gray-100 rounded-xl flex flex-col justify-between">
+            <span class="text-xs font-semibold text-gray-500">⏱️ 기도 시간</span>
+            <div class="flex items-center justify-between mt-2">
+              <button type="button" id="btn-prayer-minus" class="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 font-bold text-xs">-10</button>
+              <div class="flex items-baseline">
+                <input type="number" id="input-prayer" min="0" step="5" class="w-10 text-center font-bold text-gray-800 text-sm focus:outline-none" value="0">
+                <span class="text-xs text-gray-500">분</span>
+              </div>
+              <button type="button" id="btn-prayer-plus" class="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 font-bold text-xs">+10</button>
+            </div>
+          </div>
+
+          <!-- QT 체크 -->
+          <div class="col-span-2 sm:col-span-1 p-2.5 bg-white border border-gray-100 rounded-xl flex flex-col justify-between">
+            <span class="text-xs font-semibold text-gray-500">☀️ 말씀 큐티</span>
+            <button type="button" id="toggle-qt" class="w-full py-1.5 mt-1 text-xs font-bold rounded-lg bg-gray-100 text-gray-600 hover:opacity-90 transition-all">
+              QT 미체크
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 일기 가이드 작성 본체 카드 (서브탭 지원) -->
+      <div class="app-card overflow-hidden">
+        
+        <!-- 가이드 모드 전환 세그먼트 버튼 -->
+        <div class="p-2 bg-gray-100/70 border-b border-gray-200/70 flex gap-1">
+          <button type="button" data-subtab="guide17" class="guide-subtab-btn flex-1 py-2 text-xs sm:text-sm rounded-lg bg-white text-emerald-900 shadow-sm font-bold transition-all">
+            📋 17문항 정밀 점검
+          </button>
+          <button type="button" data-subtab="core5" class="guide-subtab-btn flex-1 py-2 text-xs sm:text-sm rounded-lg text-gray-500 font-medium transition-all">
+            🕊️ 5대 핵심 묵상
+          </button>
+          <button type="button" data-subtab="preview" class="guide-subtab-btn flex-1 py-2 text-xs sm:text-sm rounded-lg text-gray-500 font-medium transition-all">
+            📖 예수동행일기
+          </button>
+        </div>
+
+        <!-- 서브패널 1: 17문항 정밀 점검 가이드 -->
+        <div id="panel-guide17" class="guide-subtab-panel p-4 sm:p-6 space-y-6">
+          
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-100 gap-2">
+            <div>
+              <h4 class="text-sm sm:text-base font-bold text-[#375a43]">가이드 쓰기</h4>
+              <p class="text-xs text-gray-500 mt-0.5">질문에 답해보며 예수동행일기를 작성해 보세요</p>
+            </div>
+            <div class="flex items-center gap-1.5 self-end sm:self-center">
+              <button type="button" id="btn-guide-all-yes" class="px-2.5 py-1 text-xs font-medium text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-md border border-emerald-200 transition-all">
+                모두 예(기본)
+              </button>
+              <button type="button" id="btn-guide-reset" class="px-2.5 py-1 text-xs font-medium text-gray-500 bg-gray-50 hover:bg-gray-100 rounded-md border border-gray-200 transition-all">
+                초기화
+              </button>
+            </div>
+          </div>
+
+          <!-- 1~14번 질문 리스트 -->
+          <div id="guide14-list" class="space-y-1">
+            <!-- 동적 렌더링 -->
+          </div>
+
+          <!-- 15번: 생각한 시간 -->
+          <div class="pt-4 border-t border-gray-100">
+            <div class="flex items-start gap-2 mb-2">
+              <span class="font-bold text-emerald-900 w-6 shrink-0 text-sm">15.</span>
+              <div>
+                <label class="text-sm font-bold text-gray-800">예수님을 몇분(minutes) 정도 생각 하셨나요?</label>
+                <p class="text-xs text-gray-500">ex) 60분일 경우 60 입력</p>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 pl-8">
+              <input type="number" id="input-think-minutes" min="0" step="5" class="w-24 px-3 py-1.5 text-sm font-bold border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-700 focus:outline-none" placeholder="0">
+              <span class="text-xs font-semibold text-gray-600">분</span>
+              <div class="flex items-center gap-1 ml-2">
+                <button type="button" class="btn-add-minutes px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded text-gray-700" data-min="15">+15분</button>
+                <button type="button" class="btn-add-minutes px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded text-gray-700" data-min="30">+30분</button>
+                <button type="button" class="btn-add-minutes px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded text-gray-700" data-min="60">+60분</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 16번: 감사제목 3가지 이상 -->
+          <div class="pt-4 border-t border-gray-100">
+            <div class="flex items-start justify-between gap-2 mb-3">
+              <div class="flex items-start gap-2">
+                <span class="font-bold text-emerald-900 w-6 shrink-0 text-sm">16.</span>
+                <div>
+                  <label class="text-sm font-bold text-gray-800">하나님이 하셨다고 고백할 감사제목을 3가지 이상 기록해 보세요.</label>
+                  <p class="text-xs text-gray-500">작고 소소한 일상 속 주님의 손길을 기록합니다.</p>
+                </div>
+              </div>
+              <button type="button" id="btn-add-gratitude" class="text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-md border border-emerald-200 shrink-0">
+                + 감사 추가
+              </button>
+            </div>
+            <div id="gratitude-list-container" class="pl-2 sm:pl-8 space-y-2">
+              <!-- 동적 감사 입력창 -->
+            </div>
+          </div>
+
+          <!-- 17번: 자유롭게 기록하세요 -->
+          <div class="pt-4 border-t border-gray-100">
+            <div class="flex items-start gap-2 mb-2">
+              <span class="font-bold text-emerald-900 w-6 shrink-0 text-sm">17.</span>
+              <div>
+                <label class="text-sm font-bold text-gray-800">자유롭게 기록하세요.</label>
+                <p class="text-xs text-gray-500">오늘 주님과 나누었던 친밀한 대화와 묵상, 고백을 적어보세요.</p>
+              </div>
+            </div>
+            <div class="pl-2 sm:pl-8">
+              <textarea id="input-free-content" rows="6" class="w-full p-3.5 text-sm text-gray-800 border border-gray-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none leading-relaxed placeholder-gray-300" placeholder="예수님, 오늘 하루도 주님과 함께 걸었습니다..."></textarea>
+            </div>
+          </div>
+
+          <!-- 하단 가이드 안내문구 -->
+          <div class="p-3.5 bg-[#f6f9f6] rounded-xl text-xs text-[#406d4a] leading-relaxed border border-[#e1ece2]">
+            💡 <strong>일기 가이드 안내</strong>: 동행일기는 일상을 주님께 내어드리는 훈련입니다. 질문에 대답하듯 자연스럽게 작성하시면 어느새 하루를 돌아보게 됩니다.
+          </div>
+        </div>
+
+        <!-- 서브패널 2: 5대 핵심 묵상 가이드 -->
+        <div id="panel-core5" class="guide-subtab-panel hidden p-4 sm:p-6 space-y-5">
+          <div class="pb-3 border-b border-gray-100">
+            <h4 class="text-sm sm:text-base font-bold text-[#375a43]">5대 핵심 묵상 및 실천 기록</h4>
+            <p class="text-xs text-gray-500 mt-0.5">핵심 5가지 질문으로 하루를 깊이 있게 돌아봅니다.</p>
+          </div>
+
+          <!-- 1번 -->
+          <div class="space-y-1.5">
+            <label class="block text-sm font-bold text-gray-800">
+              1. 아침에 일어났을 때, 식사 할 때, 일 할 때, 사람 만날 때 예수님을 생각하였습니까?
+            </label>
+            <textarea id="core-fq1" rows="2" class="w-full p-2.5 text-sm border border-gray-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none placeholder-gray-300" placeholder="기상 시, 식사 때, 일할 때 주님을 바라보았던 순간을 적어보세요"></textarea>
+          </div>
+
+          <!-- 2번 -->
+          <div class="space-y-1.5">
+            <label class="block text-sm font-bold text-gray-800">
+              2. 성경 통독과 큐티를 통해 주님이 하신 말씀은 무엇이었습니까?
+            </label>
+            <textarea id="core-fq2" rows="2" class="w-full p-2.5 text-sm border border-gray-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none placeholder-gray-300" placeholder="오늘 마음에 와닿았던 말씀 구절이나 성령님의 감동을 적어보세요"></textarea>
+          </div>
+
+          <!-- 3번 -->
+          <div class="space-y-1.5">
+            <label class="block text-sm font-bold text-gray-800">
+              3. 오늘 하루 중에서 주님이 내게 주신 메시지는 무엇이 있습니까? 예수님이 하라고 지시하시는 것 같아 순종한 일은 무엇입니까?
+            </label>
+            <textarea id="core-fq3" rows="3" class="w-full p-2.5 text-sm border border-gray-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none placeholder-gray-300" placeholder="주님의 감동에 즉각적으로 순종한 구체적인 행동을 적어보세요"></textarea>
+          </div>
+
+          <!-- 4번 -->
+          <div class="space-y-1.5">
+            <label class="block text-sm font-bold text-gray-800">
+              4. 말씀을 주신 것들 중에 불순종 했던 것은 무엇입니까?
+            </label>
+            <textarea id="core-fq4" rows="2" class="w-full p-2.5 text-sm border border-gray-200 rounded-xl focus:ring-1 focus:ring-emerald-700 focus:outline-none placeholder-gray-300" placeholder="주님의 음성을 알고도 내 뜻대로 행했거나 놓쳤던 부분을 솔직하게 고백합니다"></textarea>
+          </div>
+
+          <!-- 5번 -->
+          <div class="space-y-2">
+            <label class="block text-sm font-bold text-gray-800">
+              5. 감사 기도 3가지를 적어 보십시오.
+            </label>
+            <div class="space-y-2">
+              <input type="text" id="core-fq5-1" class="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-700 focus:outline-none" placeholder="1. 첫 번째 감사 기도 제목">
+              <input type="text" id="core-fq5-2" class="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-700 focus:outline-none" placeholder="2. 두 번째 감사 기도 제목">
+              <input type="text" id="core-fq5-3" class="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-700 focus:outline-none" placeholder="3. 세 번째 감사 기도 제목">
+            </div>
+          </div>
+        </div>
+
+        <!-- 서브패널 3: 예수동행일기 본문 & 나눔 -->
+        <div id="panel-preview" class="guide-subtab-panel hidden p-4 sm:p-6 space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+            <div>
+              <h4 class="text-sm sm:text-base font-bold text-[#375a43]">📖 예수동행일기</h4>
+              <p class="text-xs text-gray-500">위드지저스 공식 일기 본문 및 나눔 양식입니다.</p>
+            </div>
+            <button type="button" id="btn-copy-share-panel" onclick="document.getElementById('btn-copy-share').click()" class="px-3 py-1.5 bg-[#375a43] hover:bg-[#2d4b37] text-white text-xs font-semibold rounded-lg shadow-xs">
+              📋 클립보드에 복사
+            </button>
+          </div>
+
+          <pre id="preview-formatted-content" class="p-4 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-800 font-sans whitespace-pre-wrap leading-relaxed select-all">
+          </pre>
+        </div>
+
+      </div>
+
+      <!-- 하단 저장 및 액션 버튼 바 -->
+      <div class="flex items-center gap-3 pt-2">
+        <button type="button" id="btn-save-journal" class="flex-1 py-3 bg-[#375a43] hover:bg-[#2c4936] text-white font-bold text-sm sm:text-base rounded-xl shadow-md transition-all flex items-center justify-center gap-2">
+          <span>💾 오늘 일기 저장하기</span>
+        </button>
+      </div>
+
+      <!-- 나눔 댓글 및 격려의 글 카드 -->
+      <div class="app-card p-4 sm:p-5 space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+          <div class="flex items-center gap-2">
+            <span class="text-base sm:text-lg">💬</span>
+            <h3 class="text-sm sm:text-base font-bold text-gray-800">
+              나눔 댓글 & 격려의 글 (<span id="write-comment-count" class="text-emerald-800 font-extrabold">0</span>)
+            </h3>
+          </div>
+          <span class="text-xs text-gray-400">위드지저스 공식 나눔방 연동</span>
+        </div>
+
+        <!-- 댓글 목록 컨테이너 -->
+        <div id="write-comments-list" class="space-y-3">
+          <!-- 동적 댓글 렌더링 -->
+        </div>
+
+        <!-- 새 댓글 작성 폼 -->
+        <div class="pt-3 border-t border-gray-100 space-y-2.5 bg-gray-50/70 p-3.5 rounded-xl border border-gray-100">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-gray-600">작성자</span>
+              <input type="text" id="input-comment-author" class="px-2.5 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-700 w-28 font-semibold text-gray-800" value="김시웅">
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-gray-600">나눔방</span>
+              <select id="select-comment-room" class="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-emerald-700 text-gray-700">
+                <option value="Login 온라인">Login 온라인</option>
+                <option value="Login 주일나눔 온라인1조">Login 주일나눔 온라인1조</option>
+                <option value="Login 형제방">Login 형제방</option>
+              </select>
+            </div>
+          </div>
+          <textarea id="input-comment-content" rows="2" class="w-full p-2.5 text-xs sm:text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-1 focus:ring-emerald-700 placeholder-gray-400 leading-relaxed" placeholder="은혜로운 나눔에 따뜻한 격려와 축복의 댓글을 남겨보세요..."></textarea>
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] text-gray-400">성도들과 함께 주님의 은혜를 나누는 공간입니다.</span>
+            <button type="button" id="btn-add-comment" class="px-4 py-1.5 bg-[#375a43] hover:bg-[#2c4936] text-white text-xs font-semibold rounded-lg shadow-xs transition-all flex items-center gap-1">
+              <span>💬 댓글 등록</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB: 일기 검색 (Search) ==================== -->
+    <section id="view-search" class="view-section hidden space-y-4">
+      <!-- 검색 헤더 및 입력 카드 -->
+      <div class="app-card p-4 sm:p-5 bg-white border border-emerald-100 shadow-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-3 border-b border-gray-100 gap-2">
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-[#375a43] flex items-center gap-2">
+              <span>🔍 예수동행일기 통합 검색</span>
+              <span id="search-total-count-badge" class="text-[11px] font-normal text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                210편 일기 · 684개 댓글
+              </span>
+            </h3>
+            <p class="text-xs text-gray-500 mt-0.5">
+              위드지저스에서 가져온 일기 본문, 묵상, 감사제목, 나눔 댓글을 실시간으로 검색합니다.
+            </p>
+          </div>
+        </div>
+
+        <!-- 검색창 입력바 -->
+        <div class="relative">
+          <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+            <span class="text-base">🔍</span>
+          </div>
+          <input 
+            type="text" 
+            id="diary-search-input" 
+            placeholder="검색어를 입력하세요 (예: 감사, 순종, 은혜, 말씀, 가족, 기도, 지체 이름...)" 
+            class="w-full pl-10 pr-24 py-3 bg-[#f8faf8] hover:bg-white focus:bg-white border border-gray-200 rounded-xl text-sm sm:text-base text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#375a43]/30 focus:border-[#375a43] transition-all"
+          >
+          <div class="absolute inset-y-0 right-0 pr-2 flex items-center gap-1">
+            <button 
+              type="button" 
+              id="btn-diary-search-clear" 
+              class="hidden px-2 py-1 text-xs text-gray-400 hover:text-gray-600 rounded-md"
+              title="검색어 지우기"
+            >✕</button>
+            <button 
+              type="button" 
+              id="btn-diary-search-exec" 
+              class="px-3.5 py-1.5 bg-[#375a43] hover:bg-[#2d4b37] text-white text-xs font-semibold rounded-lg shadow-2xs transition-all"
+            >검색</button>
+          </div>
+        </div>
+
+        <!-- 필터 영역 (검색 범위 & 연도) -->
+        <div class="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-gray-100">
+          <div class="flex flex-wrap items-center gap-1.5 text-xs" id="search-scope-filters">
+            <span class="text-gray-500 font-medium mr-1">검색 범위:</span>
+            <button type="button" data-scope="all" class="scope-chip active px-2.5 py-1 rounded-full border border-[#375a43] bg-[#375a43] text-white font-medium transition-all">전체</button>
+            <button type="button" data-scope="content" class="scope-chip px-2.5 py-1 rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all">일기 본문/제목</button>
+            <button type="button" data-scope="comments" class="scope-chip px-2.5 py-1 rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all">💬 나눔 댓글</button>
+            <button type="button" data-scope="gratitude" class="scope-chip px-2.5 py-1 rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all">🙏 감사제목</button>
+            <button type="button" data-scope="meditation" class="scope-chip px-2.5 py-1 rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-all">🕊️ 5대 묵상/점검</button>
+          </div>
+
+          <div class="flex items-center gap-1 text-xs">
+            <span class="text-gray-500">연도:</span>
+            <select id="diary-search-year-filter" class="px-2 py-1 bg-white border border-gray-200 rounded-md text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-emerald-600">
+              <option value="all" selected>전체 기간</option>
+              <option value="2026">2026년</option>
+              <option value="2025">2025년</option>
+              <option value="2024">2024년</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 추천 검색어 태그 -->
+        <div class="flex flex-wrap items-center gap-1.5 mt-3 pt-2 text-xs text-gray-500">
+          <span class="text-gray-400">추천 키워드:</span>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">감사</button>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">순종</button>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">기도</button>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">말씀</button>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">은혜</button>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">아침</button>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">식사</button>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">형제</button>
+          <button type="button" class="quick-search-tag px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded-md hover:bg-emerald-100 transition-all">예수님</button>
+        </div>
+      </div>
+
+      <!-- 검색 결과 메타 요약 -->
+      <div id="diary-search-meta" class="flex items-center justify-between text-xs text-gray-500 px-1">
+      </div>
+
+      <!-- 검색 결과 목록 컨테이너 -->
+      <div id="diary-search-results-list" class="space-y-3">
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: 동행 달력 (Calendar) ==================== -->
+    <section id="view-calendar" class="view-section hidden space-y-4">
+      <div class="app-card p-4 sm:p-6">
+        <!-- 캘린더 월 이동 헤더 -->
+        <div class="flex items-center justify-between mb-4">
+          <h3 id="calendar-month-title" class="text-base sm:text-lg font-bold text-gray-800"></h3>
+          <div class="flex items-center gap-1.5">
+            <button type="button" id="btn-cal-prev" class="px-2.5 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-md font-semibold text-gray-700">◀ 이전달</button>
+            <button type="button" id="btn-cal-next" class="px-2.5 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded-md font-semibold text-gray-700">다음달 ▶</button>
+          </div>
+        </div>
+
+        <!-- 요일 헤더 -->
+        <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-gray-400 mb-2">
+          <span class="text-red-400">일</span>
+          <span>월</span>
+          <span>화</span>
+          <span>수</span>
+          <span>목</span>
+          <span>금</span>
+          <span class="text-blue-400">토</span>
+        </div>
+
+        <!-- 날짜 그리드 -->
+        <div id="calendar-grid" class="grid grid-cols-7 gap-1.5">
+          <!-- 동적 셀 렌더링 -->
+        </div>
+      </div>
+
+      <!-- 최근 작성 일기 목록 -->
+      <div class="app-card p-4 sm:p-5">
+        <h4 class="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+          <span>📖 최근 작성한 동행일기</span>
+        </h4>
+        <div id="calendar-journal-list" class="space-y-2">
+          <!-- 동적 목록 -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 3: 동행 통계 (Stats) ==================== -->
+    <section id="view-stats" class="view-section hidden space-y-4">
+      
+      <!-- 상단 통계 KPI 카드 -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div class="app-card p-3.5 bg-white">
+          <span class="text-xs text-gray-500 font-medium">연속 동행 일수</span>
+          <div id="stat-streak" class="text-xl sm:text-2xl font-black text-[#375a43] mt-1">0일</div>
+        </div>
+        <div class="app-card p-3.5 bg-white">
+          <span class="text-xs text-gray-500 font-medium">이달 평균 바라보기</span>
+          <div id="stat-avg-look" class="text-xl sm:text-2xl font-black text-emerald-700 mt-1">0%</div>
+        </div>
+        <div class="app-card p-3.5 bg-white">
+          <span class="text-xs text-gray-500 font-medium">이달 평균 순종하기</span>
+          <div id="stat-avg-obey" class="text-xl sm:text-2xl font-black text-amber-700 mt-1">0%</div>
+        </div>
+        <div class="app-card p-3.5 bg-white">
+          <span class="text-xs text-gray-500 font-medium">누적 말씀 통독</span>
+          <div id="stat-total-bible" class="text-xl sm:text-2xl font-black text-gray-800 mt-1">0장</div>
+        </div>
+        <div class="app-card p-3.5 bg-white">
+          <span class="text-xs text-gray-500 font-medium">누적 기도 시간</span>
+          <div id="stat-total-prayer" class="text-xl sm:text-2xl font-black text-gray-800 mt-1">0분</div>
+        </div>
+        <div class="app-card p-3.5 bg-white">
+          <span class="text-xs text-gray-500 font-medium">말씀 큐티(QT) 실천</span>
+          <div id="stat-qt-count" class="text-xl sm:text-2xl font-black text-emerald-800 mt-1">0회</div>
+        </div>
+      </div>
+
+      <!-- 영적 동행 인사이트 코칭 박스 -->
+      <div class="app-card p-4 sm:p-5 bg-linear-to-r from-emerald-50/70 to-teal-50/70 border-emerald-200">
+        <h4 class="text-xs font-bold text-emerald-900 mb-1 flex items-center gap-1.5">
+          <span>🌿 나의 동행 패턴 분석 및 은혜 조언</span>
+        </h4>
+        <div id="stat-insight-text" class="text-xs sm:text-sm text-gray-700 leading-relaxed">
+          일기 점검 데이터를 바탕으로 주님을 가장 잘 기억하는 순간과 회복이 필요한 순간을 분석해 드립니다.
+        </div>
+      </div>
+
+      <!-- 차트 1: 예수님 바라보기 & 순종하기 추이 차트 -->
+      <div class="app-card p-4 sm:p-5">
+        <h4 class="text-sm font-bold text-gray-800 mb-3">📈 주님 바라보기 & 순종하기 변화 추이</h4>
+        <div class="h-64">
+          <canvas id="chart-trend"></canvas>
+        </div>
+      </div>
+
+      <!-- 차트 2: 14개 점검 질문 상황별 분석 차트 -->
+      <div class="app-card p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="text-sm font-bold text-gray-800">📊 일상 속 주님 생각 상황별 체크율 (14개 항목)</h4>
+          <span class="text-[11px] text-gray-400">초록: 우수 | 황갈: 집중 필요</span>
+        </div>
+        <div class="h-80">
+          <canvas id="chart-situation"></canvas>
+        </div>
+      </div>
+
+      <!-- 차트 3: 말씀 읽기 & 기도 시간 차트 -->
+      <div class="app-card p-4 sm:p-5">
+        <h4 class="text-sm font-bold text-gray-800 mb-3">📖 최근 말씀 통독 및 기도 시간</h4>
+        <div class="h-56">
+          <canvas id="chart-reading-prayer"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB 4: 은혜의 감사함 (Gratitude Stream) ==================== -->
+    <section id="view-gratitude" class="view-section hidden space-y-4">
+      <div class="app-card p-4 sm:p-5 bg-linear-to-r from-amber-50/50 to-orange-50/40 border-amber-200">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-base font-bold text-amber-900 flex items-center gap-2">
+              <span>🙏 은혜의 감사함 모아보기</span>
+            </h3>
+            <p class="text-xs text-amber-700 mt-0.5">매일 주님이 행하신 일들을 기억하고 고백한 감사제목들입니다.</p>
+          </div>
+          <span id="gratitude-total-count" class="px-3 py-1 bg-white text-xs font-bold text-amber-800 rounded-full border border-amber-200 shadow-2xs">0개의 감사</span>
+        </div>
+      </div>
+
+      <div id="gratitude-stream-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <!-- 동적 카드 목록 -->
+      </div>
+    </section>
+
+    <!-- ==================== TAB 5: 전체성경 66권 (Bible) ==================== -->
+    <section id="view-bible" class="view-section hidden w-full -mx-3 sm:-mx-4 -mt-4 sm:-mt-6 pb-0" style="height: calc(100dvh - 102px);">
+      <iframe id="bible-iframe" src="./bible/index.html" class="w-full h-full border-0" title="66권 전체성경 앱"></iframe>
+    </section>
+
+    <!-- ==================== TAB 6: 설정 및 동기화 (Settings) ==================== -->
+    <section id="view-settings" class="view-section hidden space-y-4">
+      
+      <!-- 프로필 및 나눔 그룹 설정 -->
+      <div class="app-card p-4 sm:p-5 space-y-4">
+        <h3 class="text-sm font-bold text-[#375a43] pb-2 border-b border-gray-100">
+          👤 사용자 및 나눔 그룹 설정
+        </h3>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">작성자 닉네임 / 이름</label>
+          <div class="flex gap-2">
+            <input type="text" id="settings-author-name" class="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-700" placeholder="동행자">
+            <button type="button" id="btn-save-settings" class="px-3.5 py-1.5 bg-[#375a43] text-white text-xs font-semibold rounded-lg hover:bg-[#2d4b37]">저장</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">나눔 그룹 목록 관리</label>
+          <div id="settings-groups-list" class="space-y-1.5 mb-2">
+            <!-- 동적 렌더링 -->
+          </div>
+          <div class="flex gap-2">
+            <input type="text" id="input-new-group-name" class="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-700" placeholder="새 나눔 그룹명 (예: 청년부 셀모임)">
+            <button type="button" id="btn-add-custom-group" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-xs font-semibold rounded-lg text-gray-700">+ 추가</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 🔤 글씨 크기 설정 (화면 폰트 조절) -->
+      <div class="app-card p-4 sm:p-5 space-y-3">
+        <div class="flex items-center justify-between pb-2 border-b border-gray-100">
+          <h3 class="text-sm font-bold text-[#375a43] flex items-center gap-1.5">
+            <span>🔤 화면 글씨 크기 설정</span>
+          </h3>
+          <span id="font-size-label" class="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">보통 (100%)</span>
+        </div>
+        <p class="text-xs text-gray-500">일기 본문, 묵상 메모, 성경 말씀의 글자 크기를 조절합니다.</p>
+
+        <!-- 4단계 선택 버튼 -->
+        <div class="grid grid-cols-4 gap-2 pt-1">
+          <button type="button" data-font-size="small" class="font-size-btn py-2 text-center rounded-xl border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-all">
+            작게<br><span class="text-[10px] opacity-75">90%</span>
+          </button>
+          <button type="button" data-font-size="normal" class="font-size-btn py-2 text-center rounded-xl border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-all active">
+            보통<br><span class="text-[10px] opacity-75">100%</span>
+          </button>
+          <button type="button" data-font-size="large" class="font-size-btn py-2 text-center rounded-xl border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-all">
+            크게<br><span class="text-[10px] opacity-75">115%</span>
+          </button>
+          <button type="button" data-font-size="xlarge" class="font-size-btn py-2 text-center rounded-xl border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-all">
+            아주 크게<br><span class="text-[10px] opacity-75">130%</span>
+          </button>
+        </div>
+
+        <!-- 실시간 미리보기 샘플 박스 -->
+        <div class="p-3 bg-gray-50 rounded-xl border border-gray-100 mt-2">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[11px] font-semibold text-gray-400">실시간 글씨 크기 미리보기</span>
+            <span class="text-[11px] text-emerald-800 font-medium">예수동행 본문 예시</span>
+          </div>
+          <p id="font-preview-sample" class="text-gray-800 font-serif leading-relaxed text-sm">
+            "내 안에 거하라 나도 너희 안에 거하리라 가지가 포도나무에 붙어 있지 아니하면 스스로 열매를 맺을 수 없음 같이 너희도 내 안에 있지 아니하면 그러하리라" (요 15:4)
+          </p>
+        </div>
+      </div>
+
+      <!-- 데이터 백업 및 복원 -->
+      <div class="app-card p-4 sm:p-5 space-y-3">
+        <h3 class="text-sm font-bold text-gray-800 pb-2 border-b border-gray-100">
+          💾 데이터 백업 및 기기 이전
+        </h3>
+        <p class="text-xs text-gray-500 leading-relaxed">
+          예수동행일기는 개인정보 보호를 위해 사용자의 기기(브라우저)에 안전하게 저장됩니다. 휴대폰을 바꾸거나 PC로 옮기실 때 JSON 파일로 안전하게 백업하고 복원하실 수 있습니다.
+        </p>
+
+        <div class="flex flex-wrap gap-2 pt-1">
+          <button type="button" id="btn-export-json" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all">
+            <span>📥 일기 데이터 백업 다운로드 (.json)</span>
+          </button>
+          <button type="button" id="btn-trigger-import" class="px-3.5 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all">
+            <span>📤 백업 파일에서 복원하기</span>
+          </button>
+          <input type="file" id="input-import-file" accept=".json" class="hidden">
+        </div>
+      </div>
+
+      <!-- 위드지저스 공식 계정 연동 및 실시간 동기화 카드 -->
+      <div class="app-card p-4 sm:p-5 bg-linear-to-r from-emerald-50/90 to-teal-50/70 border-emerald-200 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-start sm:items-center gap-3">
+            <span class="text-2xl">🌿</span>
+            <div>
+              <h4 class="text-sm sm:text-base font-bold text-emerald-950 flex items-center gap-2">
+                <span>위드지저스(jwj.kr) 공식 일기 실시간 동기화</span>
+                <span id="sync-status-indicator" class="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">동기화 완료</span>
+              </h4>
+              <p class="text-xs text-emerald-800 mt-0.5">
+                계정: <strong>indianyell5w@kakao.com</strong> (Paniel님) | 
+                가져온 일기: <strong id="jwj-imported-badge">0편</strong> | 
+                나눔 댓글: <strong id="jwj-comments-badge">0개</strong>
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="btn-api-sync" class="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5">
+              <span class="sync-icon inline-block">🔄</span>
+              <span>실시간 동기화 실행</span>
+            </button>
+            <button type="button" id="btn-reload-jwj-data" title="기존 데이터 다시 적용" class="px-3 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-emerald-200 text-xs font-semibold rounded-xl shadow-2xs transition-all">
+              <span>캐시 갱신</span>
+            </button>
+          </div>
+        </div>
+        <div class="text-[11px] text-gray-600 bg-white/70 p-3 rounded-xl border border-emerald-100 leading-relaxed space-y-1">
+          <p>✨ <strong>원클릭 실시간 동기화</strong>: 상단 또는 위 버튼을 클릭하시면 위드지저스 서버에 로그인하여 새로 쓴 일기와 형제자매님들의 따뜻한 댓글을 즉시 가져옵니다.</p>
+          <p class="text-gray-500">터미널 직접 실행: <code class="bg-gray-100 px-1 py-0.5 rounded text-emerald-900 font-mono">python sync_jwj_diaries.py</code></p>
+        </div>
+      </div>
+
+      <!-- 모바일 앱(PWA) 설치 안내 -->
+      <div class="app-card p-4 sm:p-5 bg-[#f6f9f6] border-[#d7e6d9]">
+        <h4 class="text-xs font-bold text-[#375a43] mb-1">📱 스마트폰 홈 화면에 앱으로 추가하는 방법</h4>
+        <ul class="text-xs text-gray-600 space-y-1 mt-2 list-disc list-inside">
+          <li><strong>아이폰(Safari)</strong>: 하단 공유 버튼 [↑] 클릭 ➔ <strong>'홈 화면에 추가'</strong> 선택</li>
+          <li><strong>안드로이드(Chrome)</strong>: 우측 상단 메뉴 [⋮] 클릭 ➔ <strong>'홈 화면에 추가'</strong> 또는 <strong>'앱 설치'</strong> 선택</li>
+        </ul>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- 토스트 알림 컴포넌트 -->
+  <div id="toast-notification" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2.5 bg-gray-900/90 text-white text-xs sm:text-sm font-medium rounded-full shadow-lg transition-all duration-300 opacity-0 pointer-events-none translate-y-2 z-50 flex items-center gap-2">
+    알림 메시지
+  </div>
+
+
+  <!-- 스크립트 연결 -->
+  <script src="./js/imported_data.js"></script>
+  <script src="./js/store.js"></script>
+  <script src="./js/charts.js"></script>
+  <script src="./js/app.js"></script>
+  <script>
+    // PWA Service Worker 등록
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW register fail:', err));
+      });
+    }
+  </script>
+</body>
+</html>
