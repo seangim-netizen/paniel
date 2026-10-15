@@ -1,12 +1,14 @@
-const CACHE_NAME = 'jesus-walk-v1';
+const CACHE_NAME = 'paniel-walk-v2';
 const ASSETS = [
   './',
   './index.html',
   './css/style.css',
+  './js/imported_data.js',
   './js/store.js',
   './js/charts.js',
   './js/app.js',
-  './assets/logo.svg',
+  './assets/apple-touch-icon.png',
+  './assets/login_church_logo.png',
   './manifest.json'
 ];
 

@@ -98,6 +98,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elTitle) elTitle.value = currentJournal.title || '나의 일기';
     if (elTags) elTags.value = (currentJournal.tags || []).join(' ');
 
+    const elCommentAuthor = document.getElementById('input-comment-author');
+    if (elCommentAuthor) {
+      elCommentAuthor.value = store.settings.authorName || '최현경';
+    }
+
     // 상단 스트릭 및 배지 표시
     updateHeaderStreak();
 
@@ -146,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const authorName = c.author || '나눔 성도';
       const initial = authorName.charAt(0);
-      const isMyName = authorName === (store.settings.authorName || '김시웅');
+      const isMyName = authorName === (store.settings.authorName || '최현경');
 
       cDiv.innerHTML = `
         <div class="flex items-center justify-between">
@@ -185,7 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const contentInput = document.getElementById('input-comment-content');
     const roomSelect = document.getElementById('select-comment-room');
 
-    const author = (authorInput?.value || store.settings.authorName || '김시웅').trim();
+    const author = (authorInput?.value || store.settings.authorName || '최현경').trim();
     const content = (contentInput?.value || '').trim();
     const room = roomSelect?.value || 'Login 온라인';
 
@@ -920,7 +925,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- 설정 화면 관리 ---
   function renderSettings() {
     const nameInput = document.getElementById('settings-author-name');
-    if (nameInput) nameInput.value = store.settings.authorName || 'Paniel';
+    if (nameInput) nameInput.value = store.settings.authorName || '최현경';
 
     const groupListContainer = document.getElementById('settings-groups-list');
     if (groupListContainer) {
@@ -1490,6 +1495,14 @@ document.addEventListener('DOMContentLoaded', () => {
   initFontSize();
   applyGlobalTheme(currentTheme);
 
-  // 초기 실행: 오늘 날짜 일기 로드
-  loadJournalForDate(currentDateStr);
+  // 초기 실행: 오늘 일기가 작성되어 있으면 오늘 일기 로드, 없으면 가장 최근 작성된 일기 로드
+  const allList = store.getAllJournalsList();
+  const todayJournal = store.journals[currentDateStr];
+  if ((!todayJournal || !todayJournal.title || todayJournal.title === '나의 일기') && allList.length > 0) {
+    currentDateStr = allList[0].date;
+    loadJournalForDate(currentDateStr);
+    switchGuideSubtab('preview');
+  } else {
+    loadJournalForDate(currentDateStr);
+  }
 });

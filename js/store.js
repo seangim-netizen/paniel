@@ -28,13 +28,13 @@ const FIVE_CORE_QUESTIONS = [
 const DEFAULT_GROUPS = [
   'Login 온라인',
   'Login 주일나눔 온라인1조',
-  'Login 형제방'
+  'Login 자매방'
 ];
 
 class JournalStore {
   constructor() {
-    this.storageKey = 'jesus_walk_journals_v2';
-    this.settingsKey = 'jesus_walk_settings_v2';
+    this.storageKey = 'paniel_walk_journals_v2';
+    this.settingsKey = 'paniel_walk_settings_v2';
     this.journals = this.loadJournals();
     this.settings = this.loadSettings();
 
@@ -52,14 +52,19 @@ class JournalStore {
   loadJournals() {
     try {
       const data = localStorage.getItem(this.storageKey);
-      if (data) return JSON.parse(data);
+      let journals = data ? JSON.parse(data) : {};
       if (window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.journals) {
-        return window.INITIAL_IMPORTED_DATA.journals;
+        const imported = window.INITIAL_IMPORTED_DATA.journals;
+        const importedCount = Object.keys(imported).length;
+        if (Object.keys(journals).length < importedCount) {
+          journals = { ...imported, ...journals };
+          localStorage.setItem(this.storageKey, JSON.stringify(journals));
+        }
       }
-      return {};
+      return journals;
     } catch (e) {
       console.error('Failed to load journals', e);
-      return {};
+      return (window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.journals) || {};
     }
   }
 
@@ -74,27 +79,18 @@ class JournalStore {
   loadSettings() {
     try {
       const data = localStorage.getItem(this.settingsKey);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.settings && (!parsed.authorName || parsed.authorName === 'Paniel' || parsed.authorName === '김시웅')) {
-          parsed.authorName = window.INITIAL_IMPORTED_DATA.settings.authorName || '최현경';
-          if (window.INITIAL_IMPORTED_DATA.settings.customGroups) {
-            parsed.customGroups = window.INITIAL_IMPORTED_DATA.settings.customGroups;
-          }
-          localStorage.setItem(this.settingsKey, JSON.stringify(parsed));
-        }
-        return parsed;
+      let settings = data ? JSON.parse(data) : {};
+      if (!settings.authorName || settings.authorName === '김시웅' || settings.authorName === 'Paniel') {
+        settings.authorName = '최현경';
       }
-      if (window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.settings) {
-        return {
-          customGroups: window.INITIAL_IMPORTED_DATA.settings.customGroups || ['Login 온라인', 'Login 주일나눔 온라인1조', 'Login 자매방'],
-          authorName: window.INITIAL_IMPORTED_DATA.settings.authorName || '최현경',
-          reminderTime: '21:00'
-        };
+      if (!settings.customGroups || settings.customGroups.includes('Login 형제방')) {
+        settings.customGroups = ['Login 온라인', 'Login 주일나눔 온라인1조', 'Login 자매방'];
       }
-      return { customGroups: ['Login 온라인', 'Login 주일나눔 온라인1조', 'Login 자매방'], reminderTime: '21:00', authorName: '최현경' };
+      if (!settings.reminderTime) settings.reminderTime = '21:00';
+      localStorage.setItem(this.settingsKey, JSON.stringify(settings));
+      return settings;
     } catch (e) {
-      return { customGroups: ['Login 온라인', 'Login 주일나눔 온라인1조', 'Login 자매방'], reminderTime: '21:00', authorName: '최현경' };
+      return { customGroups: DEFAULT_GROUPS, reminderTime: '21:00', authorName: '최현경' };
     }
   }
 
@@ -158,7 +154,7 @@ class JournalStore {
     if (!j.comments) j.comments = [];
     const newComment = {
       id: comment.id || 'c_' + Date.now(),
-      author: comment.author || this.settings.authorName || '김시웅',
+      author: comment.author || this.settings.authorName || '최현경',
       content: (comment.content || '').trim(),
       date: comment.date || this.getTodayDateString(),
       room: comment.room || (j.visibility && j.visibility[0]) || 'Login 온라인'
