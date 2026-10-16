@@ -1,6 +1,6 @@
 """
-예수동행일기 (LivingBreath & Paniel) 통합 실시간 동기화 로컬 서버
-실행 방법: python server.py
+예수동행일기 (LivingBreath & Paniel) 통합 실시간 동기화 로컬 서버 + 백그라운드 자동 감지 데몬
+실행 방법: python server.py --no-browser
 """
 import http.server
 import socketserver
@@ -8,6 +8,7 @@ import webbrowser
 import os
 import sys
 import json
+import time
 import threading
 import traceback
 from urllib.parse import urlparse, parse_qs
@@ -29,6 +30,35 @@ ROOT_DIR = os.path.dirname(DIRECTORY) if os.path.basename(DIRECTORY).lower() in 
 LIVINGBREATH_DIR = os.path.join(ROOT_DIR, 'LivingBreath') if os.path.exists(os.path.join(ROOT_DIR, 'LivingBreath')) else DIRECTORY
 PANIEL_DIR = os.path.join(ROOT_DIR, 'paniel') if os.path.exists(os.path.join(ROOT_DIR, 'paniel')) else DIRECTORY
 
+_sync_lock = threading.Lock()
+_last_fingerprints = {}
+
+
+def compute_journals_fingerprint(journals_dict):
+    if not journals_dict:
+        return ""
+    parts = []
+    for date_key in sorted(journals_dict.keys()):
+        j = journals_dict[date_key]
+        title = j.get('title', '')
+        free_txt = (j.get('guide17', {}) or {}).get('freeContent', '')
+        comments = j.get('comments', []) or []
+        c_sig = "|".join(f"{c.get('id','')}:{c.get('author','')}:{c.get('date','')}:{len(c.get('content',''))}" for c in comments)
+        parts.append(f"{date_key}#{title}#{len(free_txt)}#{len(comments)}#{c_sig}")
+    return "\n".join(parts)
+
+
+def get_disk_fingerprint(target_dir):
+    json_path = os.path.join(target_dir, 'jwj_imported_diaries.json')
+    if not os.path.exists(json_path):
+        return ""
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return compute_journals_fingerprint(data.get('journals', {}))
+    except Exception:
+        return ""
+
 
 def git_push_async(target_dir, commit_msg):
     def _worker():
@@ -40,9 +70,61 @@ def git_push_async(target_dir, commit_msg):
                 if st.stdout.strip():
                     subprocess.run(['git', 'commit', '-m', commit_msg], cwd=target_dir, check=True)
                     subprocess.run(['git', 'push', 'origin', 'main'], cwd=target_dir, check=True)
-        except Exception:
-            pass
+                    print(f"✓ [Git Push] {os.path.basename(target_dir)} 최신 일기/댓글 GitHub 자동 배포 완료!", flush=True)
+        except Exception as e:
+            print(f"  [Git Push 참고] {e}", flush=True)
     threading.Thread(target=_worker, daemon=True).start()
+
+
+def execute_app_sync(app_type):
+    with _sync_lock:
+        if app_type == 'paniel' and os.path.exists(os.path.join(PANIEL_DIR, 'sync_paniel.py')):
+            before_fp = _last_fingerprints.get('paniel') or get_disk_fingerprint(PANIEL_DIR)
+            if PANIEL_DIR not in sys.path:
+                sys.path.insert(0, PANIEL_DIR)
+            import importlib
+            import sync_paniel
+            importlib.reload(sync_paniel)
+            data = sync_paniel.run_import(full_sync=False, push_git=False)
+            after_fp = compute_journals_fingerprint(data.get('journals', {}))
+            if after_fp != before_fp:
+                _last_fingerprints['paniel'] = after_fp
+                total_c = sum(len(j.get('comments', [])) for j in data.get('journals', {}).values())
+                git_push_async(PANIEL_DIR, f"chore: auto-sync {data.get('totalCount', 0)} diaries ({total_c} comments) for Paniel")
+            return data
+        else:
+            before_fp = _last_fingerprints.get('livingbreath') or get_disk_fingerprint(LIVINGBREATH_DIR)
+            if ROOT_DIR not in sys.path:
+                sys.path.insert(0, ROOT_DIR)
+            import importlib
+            import sync_jwj_diaries
+            importlib.reload(sync_jwj_diaries)
+            data = sync_jwj_diaries.run_import(full_sync=False, push_git=False)
+            after_fp = compute_journals_fingerprint(data.get('journals', {}))
+            if after_fp != before_fp:
+                _last_fingerprints['livingbreath'] = after_fp
+                total_c = sum(len(j.get('comments', [])) for j in data.get('journals', {}).values())
+                git_push_async(LIVINGBREATH_DIR, f"chore: auto-sync {data.get('totalCount', 0)} diaries ({total_c} comments) for LivingBreath")
+            return data
+
+
+def background_auto_sync_daemon(interval_sec=180):
+    """3분마다 백그라운드에서 위드지저스(jwj.kr) 신규 일기 및 최신 댓글을 감지하여 자동 동기화 & GitHub 배포"""
+    while True:
+        try:
+            execute_app_sync('livingbreath')
+        except Exception as e:
+            print(f"[AutoSync LivingBreath Error] {e}", flush=True)
+        try:
+            execute_app_sync('paniel')
+        except Exception as e:
+            print(f"[AutoSync Paniel Error] {e}", flush=True)
+        time.sleep(interval_sec)
+
+
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -52,8 +134,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', '*')
         self.send_header('Access-Control-Allow-Private-Network', 'true')
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -72,6 +155,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
+        content_len = int(self.headers.get('Content-Length', 0) or 0)
+        if content_len > 0:
+            try:
+                self.rfile.read(content_len)
+            except Exception:
+                pass
         if self.path.startswith('/api/sync'):
             self.handle_sync()
         else:
@@ -86,23 +175,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 app_type = 'paniel' if os.path.basename(DIRECTORY).lower() == 'paniel' else 'livingbreath'
 
             print(f">>> [API] 위드지저스(jwj.kr) 실시간 동기화 요청 수신 ({app_type})...", flush=True)
-
-            if app_type == 'paniel' and os.path.exists(os.path.join(PANIEL_DIR, 'sync_paniel.py')):
-                if PANIEL_DIR not in sys.path:
-                    sys.path.insert(0, PANIEL_DIR)
-                import importlib
-                import sync_paniel
-                importlib.reload(sync_paniel)
-                data = sync_paniel.run_import(full_sync=False, push_git=False)
-                git_push_async(PANIEL_DIR, f"chore: auto-sync {data.get('totalCount', 0)} diaries for Paniel")
-            else:
-                if LIVINGBREATH_DIR not in sys.path:
-                    sys.path.insert(0, LIVINGBREATH_DIR)
-                import importlib
-                import sync_jwj_diaries
-                importlib.reload(sync_jwj_diaries)
-                data = sync_jwj_diaries.run_import(full_sync=False, push_git=False)
-                git_push_async(LIVINGBREATH_DIR, f"chore: auto-sync {data.get('totalCount', 0)} diaries for LivingBreath")
+            data = execute_app_sync(app_type)
 
             total_diaries = data.get('totalCount', 0)
             total_comments = sum(len(j.get('comments', [])) for j in data.get('journals', {}).values())
@@ -133,15 +206,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 def run(open_browser=True):
     os.chdir(DIRECTORY)
-    port = PORT
+    # 시작 시 백그라운드 자동 동기화 스레드 가동 (3분 주기)
+    t = threading.Thread(target=background_auto_sync_daemon, args=(180,), daemon=True)
+    t.start()
 
     for p in range(PORT, PORT + 20):
         try:
-            socketserver.TCPServer.allow_reuse_address = True
-            with socketserver.TCPServer(("", p), Handler) as httpd:
+            with ThreadingHTTPServer(("", p), Handler) as httpd:
                 url = f"http://localhost:{p}"
                 print("=" * 60, flush=True)
-                print("  🌿 예수동행일기 실시간 동기화 서버가 시작되었습니다!", flush=True)
+                print("  🌿 예수동행일기 실시간 동기화 서버 & 자동 감지 데몬 시작!", flush=True)
                 print(f"  🌐 브라우저 주소: {url}", flush=True)
                 print("  🔄 실시간 동기화 API: /api/sync (LivingBreath & Paniel 통합 지원)", flush=True)
                 print("=" * 60, flush=True)

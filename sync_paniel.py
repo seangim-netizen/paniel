@@ -197,7 +197,14 @@ def build_entry_from_raw(summary_item, det, raw_comments, default_groups=DEFAULT
         author = c.get('memName') or c.get('nickName') or '나눔 성도'
         c_text = clean_html(c.get('postCnts') or c.get('commentCnts') or '')
         if c_text:
-            c_date = c.get('showdate') or str(c.get('regLdate') or c.get('saveLDate') or '')[:10]
+            raw_dt = str(c.get('postCd') or c.get('regLdate') or c.get('saveLDate') or '').strip()
+            show_dt = str(c.get('showdate') or '').strip()
+            if re.match(r'^\d{4}-\d{2}-\d{2}$', show_dt):
+                c_date = show_dt
+            elif len(raw_dt) >= 8 and raw_dt[:8].isdigit():
+                c_date = f"{raw_dt[:4]}-{raw_dt[4:6]}-{raw_dt[6:8]}"
+            else:
+                c_date = show_dt or datetime.now().strftime("%Y-%m-%d")
             comments.append({
                 'id': c.get('postCd') or c.get('boardCommentCd') or str(datetime.now().timestamp()),
                 'author': author,

@@ -1031,7 +1031,11 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('🌿 위드지저스(jwj.kr) 실시간 동기화를 시작합니다...');
     }
 
+    const countAllComments = (journalsObj) =>
+      Object.values(journalsObj || {}).reduce((acc, j) => acc + ((j && j.comments) ? j.comments.length : 0), 0);
+
     const beforeCount = Object.keys(store.journals || {}).length;
+    const beforeComments = countAllComments(store.journals);
     const beforeStreak = store.calculateStreak();
 
     const applyFreshPayload = (freshData) => {
@@ -1049,31 +1053,54 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       updateHeaderStreak();
       renderSettings();
+      if (typeof executeDiarySearch === 'function') executeDiarySearch();
       if (stats) stats.renderAllStats();
       return true;
     };
 
     try {
-      // 1단계: 서버/GitHub Pages의 최신 jwj_imported_diaries.json 즉시 로드 (캐시 무시)
-      try {
-        const jsonRes = await fetch('./jwj_imported_diaries.json?t=' + Date.now(), { cache: 'no-store' });
-        if (jsonRes.ok) {
-          const freshData = await jsonRes.json();
-          applyFreshPayload(freshData);
-        }
-      } catch (e) {}
+      // 1단계: GitHub Raw(CDN 지연 없음) 및 로컬/서버 jwj_imported_diaries.json 병렬 조회하여 더 최신 데이터 즉시 반영
+      const jsonUrls = [
+        'https://raw.githubusercontent.com/seangim-netizen/paniel/main/jwj_imported_diaries.json?t=' + Date.now(),
+        './jwj_imported_diaries.json?t=' + Date.now()
+      ];
+      let bestStaticData = null;
+      for (const u of jsonUrls) {
+        try {
+          const r = await fetch(u, { cache: 'no-store' });
+          if (r.ok) {
+            const d = await r.json();
+            if (d && d.journals) {
+              if (!bestStaticData) {
+                bestStaticData = d;
+              } else {
+                const cNew = countAllComments(d.journals);
+                const cOld = countAllComments(bestStaticData.journals);
+                const kNew = Object.keys(d.journals).length;
+                const kOld = Object.keys(bestStaticData.journals).length;
+                if (kNew > kOld || cNew > cOld || (d.exportedAt || '') > (bestStaticData.exportedAt || '')) {
+                  bestStaticData = d;
+                }
+              }
+            }
+          }
+        } catch (e) {}
+      }
+      if (bestStaticData) {
+        applyFreshPayload(bestStaticData);
+      }
 
-      // 2단계: 로컬 실시간 동기화 서버(/api/sync 또는 localhost:8080/api/sync) 호출하여 jwj.kr 실시간 수집
+      // 2단계: 로컬 실시간 동기화 서버(/api/sync 또는 localhost:8080/api/sync) 호출하여 jwj.kr에서 최신 일기+댓글 실시간 수집
       const apiEndpoints = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-        ? ['/api/sync?app=paniel']
-        : ['http://localhost:8080/api/sync?app=paniel', '/api/sync?app=paniel'];
+        ? ['/api/sync?app=paniel&t=' + Date.now()]
+        : ['http://localhost:8080/api/sync?app=paniel&t=' + Date.now(), '/api/sync?app=paniel&t=' + Date.now()];
 
       let liveResult = null;
       for (const endpoint of apiEndpoints) {
         try {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 15000);
-          const response = await fetch(endpoint, { method: 'POST', signal: controller.signal });
+          const response = await fetch(endpoint, { method: 'GET', cache: 'no-store', signal: controller.signal });
           clearTimeout(timer);
           if (response.ok) {
             const resJson = await response.json();
@@ -1085,27 +1112,27 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {}
       }
 
+      const afterCount = Object.keys(store.journals || {}).length;
+      const afterComments = countAllComments(store.journals);
+      const afterStreak = store.calculateStreak();
+
       if (liveResult) {
         if (liveResult.payload) {
           applyFreshPayload(liveResult.payload);
-        } else {
-          const jsonRes2 = await fetch('./jwj_imported_diaries.json?t=' + Date.now(), { cache: 'no-store' });
-          if (jsonRes2.ok) {
-            applyFreshPayload(await jsonRes2.json());
-          }
         }
+        const finalCount = Object.keys(store.journals || {}).length;
+        const finalComments = countAllComments(store.journals);
+        const finalStreak = store.calculateStreak();
         if (!isSilent) {
-          showToast(`🎉 ${liveResult.message || '실시간 동기화 완료!'}`);
-        } else {
-          const afterCount = Object.keys(store.journals || {}).length;
-          const afterStreak = store.calculateStreak();
-          if (afterCount > beforeCount || afterStreak !== beforeStreak) {
-            showToast(`🔄 최신 일기가 자동 동기화되었습니다! (연속 ${afterStreak}일 · 총 ${afterCount}편)`);
-          }
+          showToast(`🎉 위드지저스 일기 ${finalCount}편 · 나눔 댓글 ${finalComments}개 실시간 동기화 완료!`);
+        } else if (finalCount > beforeCount || finalComments !== beforeComments || finalStreak !== beforeStreak) {
+          showToast(`🔄 최신 일기 및 댓글이 동기화되었습니다! (일기 ${finalCount}편 · 댓글 ${finalComments}개)`);
         }
       } else {
         if (!isSilent) {
-          showToast(`✓ 최신 일기 ${Object.keys(store.journals).length}편이 동기화되었습니다.`);
+          showToast(`✓ 최신 일기 ${afterCount}편 · 나눔 댓글 ${afterComments}개가 동기화되었습니다.`);
+        } else if (afterCount > beforeCount || afterComments !== beforeComments || afterStreak !== beforeStreak) {
+          showToast(`🔄 최신 일기 및 댓글이 동기화되었습니다! (일기 ${afterCount}편 · 댓글 ${afterComments}개)`);
         }
       }
 
