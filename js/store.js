@@ -175,16 +175,20 @@ class JournalStore {
   syncWithImportedData(force = false) {
     if (!window.INITIAL_IMPORTED_DATA || !window.INITIAL_IMPORTED_DATA.journals) return 0;
     const imported = window.INITIAL_IMPORTED_DATA.journals;
+    if (force) {
+      this.journals = { ...imported };
+      this.saveJournals();
+      return Object.keys(this.journals).length;
+    }
     for (const [date, item] of Object.entries(imported)) {
       const existing = this.journals[date];
       const existingContent = (existing?.guide17?.freeContent || '').trim();
       const importedContent = (item?.guide17?.freeContent || '').trim();
       const isExistingEmpty = !existing || (!existingContent && (!existing.title || existing.title === '나의 일기'));
 
-      if (isExistingEmpty || force) {
+      if (isExistingEmpty) {
         this.journals[date] = item;
       } else {
-        // 기존 일기가 있을 경우 본문이 더 긴 쪽 또는 최신 제목 반영 및 댓글 병합
         if (importedContent && importedContent.length > existingContent.length) {
           this.journals[date].guide17 = item.guide17;
           this.journals[date].core5 = item.core5;
