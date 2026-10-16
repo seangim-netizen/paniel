@@ -138,8 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (comments.length === 0) {
       listContainer.innerHTML = `
         <div class="py-5 px-4 text-center bg-gray-50/70 rounded-xl border border-dashed border-gray-200 text-gray-400">
-          <p class="text-xs">이 일기에는 아직 등록된 나눔 댓글이 없습니다.</p>
-          <p class="text-[11px] mt-0.5 text-gray-400">아래에서 첫 번째 따뜻한 격려와 축복의 댓글을 남겨보세요.</p>
+          <p class="text-xs">이 일기에는 등록된 나눔 댓글이 없습니다.</p>
         </div>
       `;
       return;
@@ -166,20 +165,10 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <div class="flex items-center gap-2">
             <span class="text-[10px] text-gray-400">${escapeHtml(c.date || '')}</span>
-            <button type="button" class="btn-del-comment text-gray-300 hover:text-red-500 text-xs px-1" title="댓글 삭제" data-id="${c.id || ''}">✕</button>
           </div>
         </div>
         <p class="text-xs sm:text-sm text-gray-700 leading-relaxed pl-8 whitespace-pre-wrap">${escapeHtml(c.content || '')}</p>
       `;
-
-      cDiv.querySelector('.btn-del-comment')?.addEventListener('click', () => {
-        if (confirm(`'${authorName}' 님의 댓글을 삭제하시겠습니까?`)) {
-          store.deleteComment(currentJournal.date, c.id);
-          currentJournal = store.getJournal(currentJournal.date);
-          renderComments();
-          showToast('댓글이 삭제되었습니다.');
-        }
-      });
 
       listContainer.appendChild(cDiv);
     });
