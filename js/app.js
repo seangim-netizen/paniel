@@ -1138,8 +1138,24 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-header-sync')?.addEventListener('click', () => triggerRealtimeSync({ silent: false }));
   document.getElementById('btn-api-sync')?.addEventListener('click', () => triggerRealtimeSync({ silent: false }));
 
-  // 위드지저스 데이터 다시 적용 버튼
-  document.getElementById('btn-reload-jwj-data')?.addEventListener('click', () => {
+  // 위드지저스 데이터 다시 적용 및 모바일 웹앱 캐시 초기화 버튼
+  document.getElementById('btn-reload-jwj-data')?.addEventListener('click', async () => {
+    showToast('🔄 앱 캐시를 초기화하고 최신 데이터를 불러옵니다...');
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.update()));
+      }
+      const jsonRes = await fetch('./jwj_imported_diaries.json?t=' + Date.now(), { cache: 'no-store' });
+      if (jsonRes.ok) {
+        window.INITIAL_IMPORTED_DATA = await jsonRes.json();
+      }
+    } catch (e) {}
+
     if (window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.journals) {
       store.syncWithImportedData(true);
       if (window.INITIAL_IMPORTED_DATA.settings) {
@@ -1149,9 +1165,10 @@ document.addEventListener('DOMContentLoaded', () => {
       stats.renderAllStats();
       renderSettings();
       const count = Object.keys(window.INITIAL_IMPORTED_DATA.journals).length;
-      showToast(`✓ 위드지저스 공식 일기 ${count}편이 성공적으로 동기화되었습니다!`);
+      showToast(`✓ 최신 버전 및 일기 ${count}편 적용 완료! 화면을 새로고침합니다.`);
+      setTimeout(() => window.location.reload(), 600);
     } else {
-      showToast('불러올 위드지저스 데이터가 없습니다. sync_jwj_diaries.py를 실행해주세요.');
+      window.location.reload();
     }
   });
 

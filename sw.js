@@ -1,4 +1,4 @@
-const CACHE_NAME = 'paniel-walk-v5';
+const CACHE_NAME = 'paniel-walk-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -34,7 +34,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         if (res && res.status === 200 && res.type === 'basic') {
           const clone = res.clone();
@@ -42,6 +42,6 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request))
+      .catch(() => caches.match(e.request, { ignoreSearch: true }))
   );
 });
