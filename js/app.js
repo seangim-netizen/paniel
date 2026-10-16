@@ -1024,8 +1024,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- 위드지저스 실시간 동기화 (One-Click Real-time Sync) ---
-  async function triggerRealtimeSync() {
+  // --- 위드지저스 실시간 동기화 (앱 실행 시 자동 동기화 & 원클릭 동기화) ---
+  let isSyncingNow = false;
+  async function triggerRealtimeSync(options = {}) {
+    const isSilent = options && options.silent === true;
+    if (isSyncingNow) return;
+    isSyncingNow = true;
+
     const syncIcons = document.querySelectorAll('.sync-icon');
     syncIcons.forEach(icon => icon.classList.add('spinning'));
     const statusIndicator = document.getElementById('sync-status-indicator');
@@ -1033,54 +1038,105 @@ document.addEventListener('DOMContentLoaded', () => {
       statusIndicator.textContent = '동기화 진행 중...';
       statusIndicator.className = 'text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold animate-pulse';
     }
-    showToast('🌿 위드지저스(jwj.kr) 실시간 동기화를 시작합니다...');
+    if (!isSilent) {
+      showToast('🌿 위드지저스(jwj.kr) 실시간 동기화를 시작합니다...');
+    }
+
+    const beforeCount = Object.keys(store.journals || {}).length;
+    const beforeStreak = store.calculateStreak();
+
+    const applyFreshPayload = (freshData) => {
+      if (!freshData || !freshData.journals) return false;
+      window.INITIAL_IMPORTED_DATA = freshData;
+      store.syncWithImportedData(true);
+      const allList = store.getAllJournalsList();
+      const curJ = store.journals[currentDateStr];
+      if ((!curJ || !curJ.title || curJ.title === '나의 일기') && allList.length > 0) {
+        currentDateStr = allList[0].date;
+        loadJournalForDate(currentDateStr);
+        switchGuideSubtab('preview');
+      } else {
+        loadJournalForDate(currentDateStr);
+      }
+      updateHeaderStreak();
+      renderSettings();
+      if (stats) stats.renderAllStats();
+      return true;
+    };
 
     try {
-      const response = await fetch('/api/sync', { method: 'POST' });
-      if (!response.ok) {
-        throw new Error(`서버 응답 오류 (${response.status})`);
-      }
-      const result = await response.json();
-      if (result.status === 'success') {
-        const jsonRes = await fetch('./jwj_imported_diaries.json?t=' + Date.now());
+      // 1단계: 서버/GitHub Pages의 최신 jwj_imported_diaries.json 즉시 로드 (캐시 무시)
+      try {
+        const jsonRes = await fetch('./jwj_imported_diaries.json?t=' + Date.now(), { cache: 'no-store' });
         if (jsonRes.ok) {
           const freshData = await jsonRes.json();
-          window.INITIAL_IMPORTED_DATA = freshData;
-          store.syncWithImportedData(true);
+          applyFreshPayload(freshData);
         }
-        loadJournalForDate(currentDateStr);
-        renderSettings();
-        if (stats) stats.renderAllStats();
-        showToast(`🎉 ${result.message || '동기화 완료!'}`);
-        if (statusIndicator) {
-          statusIndicator.textContent = '방금 동기화됨';
-          statusIndicator.className = 'text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold';
+      } catch (e) {}
+
+      // 2단계: 로컬 실시간 동기화 서버(/api/sync 또는 localhost:8080/api/sync) 호출하여 jwj.kr 실시간 수집
+      const apiEndpoints = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? ['/api/sync?app=paniel']
+        : ['http://localhost:8080/api/sync?app=paniel', '/api/sync?app=paniel'];
+
+      let liveResult = null;
+      for (const endpoint of apiEndpoints) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 15000);
+          const response = await fetch(endpoint, { method: 'POST', signal: controller.signal });
+          clearTimeout(timer);
+          if (response.ok) {
+            const resJson = await response.json();
+            if (resJson && resJson.status === 'success') {
+              liveResult = resJson;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (liveResult) {
+        if (liveResult.payload) {
+          applyFreshPayload(liveResult.payload);
+        } else {
+          const jsonRes2 = await fetch('./jwj_imported_diaries.json?t=' + Date.now(), { cache: 'no-store' });
+          if (jsonRes2.ok) {
+            applyFreshPayload(await jsonRes2.json());
+          }
+        }
+        if (!isSilent) {
+          showToast(`🎉 ${liveResult.message || '실시간 동기화 완료!'}`);
+        } else {
+          const afterCount = Object.keys(store.journals || {}).length;
+          const afterStreak = store.calculateStreak();
+          if (afterCount > beforeCount || afterStreak !== beforeStreak) {
+            showToast(`🔄 최신 일기가 자동 동기화되었습니다! (연속 ${afterStreak}일 · 총 ${afterCount}편)`);
+          }
         }
       } else {
-        throw new Error(result.message || '동기화 실패');
+        if (!isSilent) {
+          showToast(`✓ 최신 일기 ${Object.keys(store.journals).length}편이 동기화되었습니다.`);
+        }
+      }
+
+      if (statusIndicator) {
+        statusIndicator.textContent = '방금 동기화됨';
+        statusIndicator.className = 'text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold';
       }
     } catch (err) {
-      console.warn('API sync failed or running statically, syncing with local cache:', err);
-      if (window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.journals) {
-        store.syncWithImportedData(false);
-        loadJournalForDate(currentDateStr);
-        renderSettings();
-        if (stats) stats.renderAllStats();
+      console.warn('Sync warning:', err);
+      if (!isSilent) {
         showToast(`✓ 위드지저스 일기 ${Object.keys(store.journals).length}편이 동기화되었습니다.`);
-      } else {
-        showToast(`동기화 안내: ${err.message}. run_app.bat 또는 python server.py로 실행해주세요.`);
-      }
-      if (statusIndicator) {
-        statusIndicator.textContent = '동기화 완료';
-        statusIndicator.className = 'text-[10px] bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full font-semibold';
       }
     } finally {
+      isSyncingNow = false;
       syncIcons.forEach(icon => icon.classList.remove('spinning'));
     }
   }
 
-  document.getElementById('btn-header-sync')?.addEventListener('click', triggerRealtimeSync);
-  document.getElementById('btn-api-sync')?.addEventListener('click', triggerRealtimeSync);
+  document.getElementById('btn-header-sync')?.addEventListener('click', () => triggerRealtimeSync({ silent: false }));
+  document.getElementById('btn-api-sync')?.addEventListener('click', () => triggerRealtimeSync({ silent: false }));
 
   // 위드지저스 데이터 다시 적용 버튼
   document.getElementById('btn-reload-jwj-data')?.addEventListener('click', () => {
@@ -1511,4 +1567,14 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     loadJournalForDate(currentDateStr);
   }
+
+  // 앱 실행 시 자동으로 실시간 동기화 수행 + 탭 복귀 시 자동 갱신
+  triggerRealtimeSync({ silent: true });
+  let lastAutoSyncTime = Date.now();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - lastAutoSyncTime > 60 * 1000) {
+      lastAutoSyncTime = Date.now();
+      triggerRealtimeSync({ silent: true });
+    }
+  });
 });

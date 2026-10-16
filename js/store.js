@@ -176,10 +176,21 @@ class JournalStore {
     if (!window.INITIAL_IMPORTED_DATA || !window.INITIAL_IMPORTED_DATA.journals) return 0;
     const imported = window.INITIAL_IMPORTED_DATA.journals;
     for (const [date, item] of Object.entries(imported)) {
-      if (!this.journals[date] || force) {
+      const existing = this.journals[date];
+      const existingContent = (existing?.guide17?.freeContent || '').trim();
+      const importedContent = (item?.guide17?.freeContent || '').trim();
+      const isExistingEmpty = !existing || (!existingContent && (!existing.title || existing.title === '나의 일기'));
+
+      if (isExistingEmpty || force) {
         this.journals[date] = item;
       } else {
-        // 기존 일기가 있을 경우 댓글 및 누락 필드 병합
+        // 기존 일기가 있을 경우 본문이 더 긴 쪽 또는 최신 제목 반영 및 댓글 병합
+        if (importedContent && importedContent.length > existingContent.length) {
+          this.journals[date].guide17 = item.guide17;
+          this.journals[date].core5 = item.core5;
+          if (item.title && item.title !== '나의 일기') this.journals[date].title = item.title;
+          if (item.tags && item.tags.length > 0) this.journals[date].tags = item.tags;
+        }
         if (item.comments && item.comments.length > 0) {
           const existingComments = this.journals[date].comments || [];
           const existingKeys = new Set(existingComments.map(c => c.id || `${c.author}_${(c.content || '').slice(0, 20)}`));
@@ -192,7 +203,7 @@ class JournalStore {
           });
           this.journals[date].comments = existingComments;
         }
-        if (!this.journals[date].faith && item.faith) {
+        if (item.faith) {
           this.journals[date].faith = item.faith;
         }
       }

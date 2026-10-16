@@ -1,5 +1,5 @@
 """
-예수동행일기 (Journal with Jesus) 로컬 웹앱 실행 스크립트
+예수동행일기 (LivingBreath & Paniel) 통합 실시간 동기화 로컬 서버
 실행 방법: python server.py
 """
 import http.server
@@ -8,7 +8,9 @@ import webbrowser
 import os
 import sys
 import json
+import threading
 import traceback
+from urllib.parse import urlparse, parse_qs
 
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     try:
@@ -23,6 +25,25 @@ if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
 
 PORT = 8080
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(DIRECTORY) if os.path.basename(DIRECTORY).lower() in ('livingbreath', 'paniel') else DIRECTORY
+LIVINGBREATH_DIR = os.path.join(ROOT_DIR, 'LivingBreath') if os.path.exists(os.path.join(ROOT_DIR, 'LivingBreath')) else DIRECTORY
+PANIEL_DIR = os.path.join(ROOT_DIR, 'paniel') if os.path.exists(os.path.join(ROOT_DIR, 'paniel')) else DIRECTORY
+
+
+def git_push_async(target_dir, commit_msg):
+    def _worker():
+        import subprocess
+        try:
+            if os.path.exists(os.path.join(target_dir, '.git')):
+                subprocess.run(['git', 'add', 'jwj_imported_diaries.json', 'js/imported_data.js'], cwd=target_dir, check=True)
+                st = subprocess.run(['git', 'status', '--porcelain'], cwd=target_dir, capture_output=True, text=True)
+                if st.stdout.strip():
+                    subprocess.run(['git', 'commit', '-m', commit_msg], cwd=target_dir, check=True)
+                    subprocess.run(['git', 'push', 'origin', 'main'], cwd=target_dir, check=True)
+        except Exception:
+            pass
+    threading.Thread(target=_worker, daemon=True).start()
+
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -32,6 +53,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Private-Network', 'true')
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -45,7 +67,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "running", "server": "JesusWalkJournal"}, ensure_ascii=False).encode('utf-8'))
+            self.wfile.write(json.dumps({"status": "running", "server": "JesusWalkJournal"}).encode('utf-8'))
         else:
             super().do_GET()
 
@@ -57,14 +79,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def handle_sync(self):
         try:
-            print(">>> [API] 위드지저스(jwj.kr) 실시간 동기화 요청 수신...")
-            import sync_paniel
-            result = sync_paniel.run_import()
-            
-            json_path = os.path.join(DIRECTORY, "jwj_imported_diaries.json")
-            with open(json_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
+            parsed = urlparse(self.path)
+            qs = parse_qs(parsed.query)
+            app_type = (qs.get('app', [''])[0] or '').lower()
+            if not app_type:
+                app_type = 'paniel' if os.path.basename(DIRECTORY).lower() == 'paniel' else 'livingbreath'
+
+            print(f">>> [API] 위드지저스(jwj.kr) 실시간 동기화 요청 수신 ({app_type})...", flush=True)
+
+            if app_type == 'paniel' and os.path.exists(os.path.join(PANIEL_DIR, 'sync_paniel.py')):
+                if PANIEL_DIR not in sys.path:
+                    sys.path.insert(0, PANIEL_DIR)
+                import importlib
+                import sync_paniel
+                importlib.reload(sync_paniel)
+                data = sync_paniel.run_import(full_sync=False, push_git=False)
+                git_push_async(PANIEL_DIR, f"chore: auto-sync {data.get('totalCount', 0)} diaries for Paniel")
+            else:
+                if LIVINGBREATH_DIR not in sys.path:
+                    sys.path.insert(0, LIVINGBREATH_DIR)
+                import importlib
+                import sync_jwj_diaries
+                importlib.reload(sync_jwj_diaries)
+                data = sync_jwj_diaries.run_import(full_sync=False, push_git=False)
+                git_push_async(LIVINGBREATH_DIR, f"chore: auto-sync {data.get('totalCount', 0)} diaries for LivingBreath")
+
             total_diaries = data.get('totalCount', 0)
             total_comments = sum(len(j.get('comments', [])) for j in data.get('journals', {}).values())
 
@@ -76,7 +115,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "message": f"위드지저스 일기 {total_diaries}편과 나눔 댓글 {total_comments}개가 실시간 동기화되었습니다.",
                 "totalCount": total_diaries,
                 "totalComments": total_comments,
-                "exportedAt": data.get('exportedAt')
+                "exportedAt": data.get('exportedAt'),
+                "payload": data
             }
             self.wfile.write(json.dumps(response_data, ensure_ascii=False).encode('utf-8'))
         except Exception as e:
@@ -90,31 +130,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             }
             self.wfile.write(json.dumps(err_data, ensure_ascii=False).encode('utf-8'))
 
-def run():
+
+def run(open_browser=True):
     os.chdir(DIRECTORY)
     port = PORT
-    
-    # 포트 충돌 방지
+
     for p in range(PORT, PORT + 20):
         try:
+            socketserver.TCPServer.allow_reuse_address = True
             with socketserver.TCPServer(("", p), Handler) as httpd:
                 url = f"http://localhost:{p}"
-                print("=" * 60)
-                print("  🌿 예수동행일기 (Journal with Jesus) 웹앱이 시작되었습니다!")
-                print(f"  🌐 브라우저 주소: {url}")
-                print("  🔄 실시간 동기화 API: /api/sync 활성화")
-                print("  📖 66권 전체성경 앱: /bible/index.html 탑재")
-                print("  📌 종료하려면 터미널에서 Ctrl + C 를 누르세요.")
-                print("=" * 60)
-                webbrowser.open(url)
+                print("=" * 60, flush=True)
+                print("  🌿 예수동행일기 실시간 동기화 서버가 시작되었습니다!", flush=True)
+                print(f"  🌐 브라우저 주소: {url}", flush=True)
+                print("  🔄 실시간 동기화 API: /api/sync (LivingBreath & Paniel 통합 지원)", flush=True)
+                print("=" * 60, flush=True)
+                if open_browser:
+                    webbrowser.open(url)
                 try:
                     httpd.serve_forever()
                 except KeyboardInterrupt:
-                    print("\n서버를 종료합니다. 오늘도 주님과 평안한 하루 되세요!")
                     sys.exit(0)
             break
         except OSError:
             continue
 
+
 if __name__ == "__main__":
-    run()
+    no_browser = '--no-browser' in sys.argv
+    run(open_browser=not no_browser)
