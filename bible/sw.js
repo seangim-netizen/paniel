@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bible-app-cache-v3-clean';
+const CACHE_NAME = 'bible-app-cache-v4-bg';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -15,24 +15,21 @@ const ASSETS_TO_CACHE = [
   './bible_data/bible_db_rsv.js'
 ];
 
-// 서비스 워커 설치 시 자원 사전 캐싱
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Caching all app shell and bible databases');
       return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// 활성화 시 오래된 캐시 정리
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cache) => {
           if (cache !== CACHE_NAME) {
-            console.log('[Service Worker] Clearing old cache', cache);
             return caches.delete(cache);
           }
         })
@@ -41,23 +38,28 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 네트워크 요청 가로채기: 캐시 우선 (오프라인/비행기모드 완벽 대응)
+// 성경 DB 대용량 파일은 캐시 우선, 앱 로직(index.html, app.js, style.css)은 네트워크 우선
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).then((networkResponse) => {
-        // 동적으로 추가되는 자원이 있다면 여기에 추가 캐싱할 수 있으나,
-        // 성경앱은 사전에 등록한 파일들 외에 추가로 로드할 데이터가 없으므로 그대로 반환합니다.
-        return networkResponse;
-      });
-    }).catch(() => {
-      // 오프라인 상태에서 매칭되는 캐시가 없을 때의 예외 처리
-      if (event.request.mode === 'navigate') {
-        return caches.match('./index.html');
-      }
-    })
-  );
+  const url = event.request.url;
+  const isBibleDb = url.includes('bible_db_');
+
+  if (isBibleDb) {
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        return cachedResponse || fetch(event.request);
+      })
+    );
+  } else {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
+    );
+  }
 });

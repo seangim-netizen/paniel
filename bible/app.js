@@ -1156,16 +1156,22 @@ function togglePlayTTS() {
 
   if (isTTSSpeaking) {
     if (isTTSPaused) {
-      window.speechSynthesis.resume();
       isTTSPaused = false;
       updateTTSPlayButtons("❚❚ 일시정지");
       startSilentAudio();
+      requestScreenWakeLock();
+      if (window.speechSynthesis.paused && window.speechSynthesis.speaking) {
+        window.speechSynthesis.resume();
+      } else {
+        speakNextTTS(false);
+      }
       updateMediaSession();
     } else {
       window.speechSynthesis.pause();
       isTTSPaused = true;
       updateTTSPlayButtons("▶ 재생");
       stopSilentAudio();
+      releaseScreenWakeLock();
       updateMediaSession();
     }
   } else {
@@ -1251,7 +1257,8 @@ function executeStartTTS(startVerse) {
 
   initTTSHeartbeat();
   startSilentAudio();
-  speakNextTTS();
+  requestScreenWakeLock();
+  speakNextTTS(false);
 }
 
 // iOS 및 모바일 TTS 음성 엔진의 한국어 성경 고질적 오발음 사전 교정 엔진
@@ -1289,7 +1296,43 @@ function preprocessKoreanTTS(text) {
   return s;
 }
 
-function speakNextTTS() {
+function createConfiguredUtterance(item) {
+  const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(item.text);
+  const speechText = isEnglish ? item.text : preprocessKoreanTTS(item.text);
+  const utterance = new SpeechSynthesisUtterance(speechText);
+  utterance.rate = TTS_SPEEDS[currentTTSSpeedIndex];
+
+  if (isEnglish) {
+    utterance.lang = "en-US";
+    if (speechVoices.length > 0) {
+      const preferredEnVoices = ["Google US English", "Microsoft David", "Microsoft Zira", "en-US", "en"];
+      for (const pref of preferredEnVoices) {
+        const selectedVoice = speechVoices.find(v => v.name.includes(pref) || v.lang.includes(pref));
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+          break;
+        }
+      }
+    }
+  } else {
+    utterance.lang = "ko-KR";
+    if (speechVoices.length > 0) {
+      const preferredKoVoices = ["Google 한국어", "Microsoft Heami", "ko-KR", "ko"];
+      for (const pref of preferredKoVoices) {
+        const selectedVoice = speechVoices.find(v => v.name.includes(pref) || v.lang.includes(pref));
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+          break;
+        }
+      }
+    }
+  }
+  return utterance;
+}
+
+let isBackgroundQueueActive = false;
+
+function speakNextTTS(fromAutoEnd = false) {
   if (!isTTSSpeaking) return;
 
   if (currentTTSIndex >= ttsSpeechItems.length) {
@@ -1297,8 +1340,8 @@ function speakNextTTS() {
       showToast("현재 장을 반복 낭독합니다.");
       currentTTSIndex = 0;
       setTimeout(() => {
-        if (isTTSSpeaking) speakNextTTS();
-      }, 500);
+        if (isTTSSpeaking) speakNextTTS(true);
+      }, 300);
       return;
     }
 
@@ -1332,7 +1375,7 @@ function speakNextTTS() {
       if (isTTSSpeaking) {
         startTTS();
       }
-    }, 800);
+    }, 500);
     return;
   }
 
@@ -1341,8 +1384,12 @@ function speakNextTTS() {
   });
 
   const item = ttsSpeechItems[currentTTSIndex];
-  item.element.classList.add("is-reading-speaking");
-  item.element.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (item && item.element) {
+    item.element.classList.add("is-reading-speaking");
+    if (!document.hidden) {
+      item.element.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
 
   updateMediaSession();
 
@@ -1352,93 +1399,80 @@ function speakNextTTS() {
     activeUtterance.onerror = null;
   }
 
-  window.speechSynthesis.cancel();
-  
-  // 한글 문자가 포함되어 있지 않다면 100% 영어 성경으로 판별 (세미콜론, 대쉬 등 모든 부호 예외 완벽 포용)
-  const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(item.text);
-  
-  // 한국어 성경일 경우 모바일/iOS 음성 엔진(Siri)의 고질적 오발음 사전 교정 적용 ('숫양' -> [순냥], '갓' -> [갇] 등)
-  const speechText = isEnglish ? item.text : preprocessKoreanTTS(item.text);
-
-  const utterance = new SpeechSynthesisUtterance(speechText);
-  activeUtterance = utterance; // 현재 재생 중인 인스턴스 백업
-  
-  utterance.rate = TTS_SPEEDS[currentTTSSpeedIndex];
-  
-  if (isEnglish) {
-    utterance.lang = "en-US";
-    // 자연스러운 영어 목소리 우선순위 매핑 (요구사항 2)
-    if (speechVoices.length > 0) {
-      const preferredEnVoices = [
-        "Google US English",
-        "Microsoft David",
-        "Microsoft Zira",
-        "en-US",
-        "en"
-      ];
-      let selectedVoice = null;
-      for (const pref of preferredEnVoices) {
-        selectedVoice = speechVoices.find(v => v.name.includes(pref) || v.lang.includes(pref));
-        if (selectedVoice) break;
-      }
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
-    }
-  } else {
-    utterance.lang = "ko-KR";
-    // 가장 자연스러운 한국어 목소리 우선순위 매핑
-    if (speechVoices.length > 0) {
-      const preferredKoVoices = [
-        "Google 한국어",
-        "Microsoft Heami",
-        "ko-KR",
-        "ko"
-      ];
-      let selectedVoice = null;
-      for (const pref of preferredKoVoices) {
-        selectedVoice = speechVoices.find(v => v.name.includes(pref) || v.lang.includes(pref));
-        if (selectedVoice) break;
-      }
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-      }
-    }
+  // 중요: 수동 조작(처음 시작, 이전/다음, 배속 변경 등)일 때만 cancel() 호출!
+  // 자동 구절 전환(onend) 시 cancel()을 호출하면 모바일 백그라운드에서 오디오 포커스가 끊김
+  if (!fromAutoEnd) {
+    isBackgroundQueueActive = false;
+    window.speechSynthesis.cancel();
   }
 
-  // 중복 비동기 콜백 트리거 차단용 로컬 플래그 (요구사항)
+  const utterance = createConfiguredUtterance(item);
+  activeUtterance = utterance;
+
   let callbackTriggered = false;
 
   utterance.onend = () => {
-    if (callbackTriggered) return;
+    if (callbackTriggered || isBackgroundQueueActive) return;
     callbackTriggered = true;
-    
+
     if (!isTTSPaused && isTTSSpeaking) {
-      if (state.repeatMode === "VERSE") {
-        // Repeat current verse
-      } else {
+      if (state.repeatMode !== "VERSE") {
         currentTTSIndex++;
       }
-      speakNextTTS();
+      speakNextTTS(true);
     }
   };
 
   utterance.onerror = (e) => {
-    if (e.error === "interrupted") return; // 수동 정지/점프에 의한 중단 이벤트는 그냥 무시
-    if (callbackTriggered) return;
+    if (e.error === "interrupted" || e.error === "canceled") return;
+    if (callbackTriggered || isBackgroundQueueActive) return;
     callbackTriggered = true;
-    
-    if (isTTSSpeaking) {
-      if (state.repeatMode === "VERSE") {
-        // Repeat current verse
-      } else {
+
+    if (isTTSSpeaking && !isTTSPaused) {
+      if (state.repeatMode !== "VERSE") {
         currentTTSIndex++;
       }
-      speakNextTTS();
+      speakNextTTS(true);
     }
   };
 
   window.speechSynthesis.speak(utterance);
+
+  // 만약 현재 화면이 꺼져 있거나 백그라운드 상태라면 남은 절들을 미리 큐에 등록
+  if (document.hidden && !isBackgroundQueueActive && state.repeatMode !== "VERSE") {
+    enqueueRemainingVersesForBackground();
+  }
+}
+
+// 모바일 화면 꺼짐(백그라운드) 시 JS 타이머가 멈춰도 OS TTS 엔진이 끝까지 읽도록 남은 구절 일괄 큐잉
+function enqueueRemainingVersesForBackground() {
+  if (!isTTSSpeaking || isTTSPaused || isBackgroundQueueActive) return;
+  isBackgroundQueueActive = true;
+
+  for (let idx = currentTTSIndex + 1; idx < ttsSpeechItems.length; idx++) {
+    const nextItem = ttsSpeechItems[idx];
+    const bgUtterance = createConfiguredUtterance(nextItem);
+    const targetIdx = idx;
+
+    bgUtterance.onstart = () => {
+      if (!isTTSSpeaking) return;
+      currentTTSIndex = targetIdx;
+      bibleViewerEl.querySelectorAll(".is-reading-speaking").forEach(el => el.classList.remove("is-reading-speaking"));
+      if (nextItem.element) nextItem.element.classList.add("is-reading-speaking");
+      updateMediaSession();
+    };
+
+    bgUtterance.onend = () => {
+      if (!isTTSSpeaking || isTTSPaused) return;
+      if (targetIdx >= ttsSpeechItems.length - 1) {
+        isBackgroundQueueActive = false;
+        currentTTSIndex = ttsSpeechItems.length;
+        speakNextTTS(true);
+      }
+    };
+
+    window.speechSynthesis.speak(bgUtterance);
+  }
 }
 
 function jumpToTTSVerse(verseNum) {
@@ -1447,14 +1481,13 @@ function jumpToTTSVerse(verseNum) {
     currentTTSIndex = targetIdx;
     isTTSPaused = false;
     btnAudioTTSPlay.textContent = "❚❚ 일시정지";
-    
-    // 점프하기 전 이전 utterance 비동기 콜백 무효화 (레이스 컨디션 차단)
+
     if (activeUtterance) {
       activeUtterance.onend = null;
       activeUtterance.onerror = null;
     }
-    
-    speakNextTTS();
+
+    speakNextTTS(false);
   }
 }
 
@@ -1462,27 +1495,27 @@ function jumpToTTSVerse(verseNum) {
 function stopTTS() {
   isTTSSpeaking = false;
   isTTSPaused = false;
-  
+  isBackgroundQueueActive = false;
+
   stopSilentAudio();
+  releaseScreenWakeLock();
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = "none";
   }
-  
-  // 정지하기 전 이전 utterance 비동기 콜백 무효화
+
   if (activeUtterance) {
     activeUtterance.onend = null;
     activeUtterance.onerror = null;
   }
-  
+
   window.speechSynthesis.cancel();
   activeUtterance = null;
-  
+
   if (window.ttsHeartbeatInterval) {
     clearInterval(window.ttsHeartbeatInterval);
     window.ttsHeartbeatInterval = null;
   }
 
-  // 재생 컨트롤 박스 숨기기
   const ttsBox2 = document.getElementById("ttsControlBox");
   if (ttsBox2) ttsBox2.classList.add("hidden");
   document.body.classList.remove("tts-active");
@@ -1496,14 +1529,14 @@ function stopTTS() {
 function playPrevTTS() {
   if (currentTTSIndex > 0) {
     currentTTSIndex--;
-    speakNextTTS();
+    speakNextTTS(false);
   }
 }
 
 function playNextTTS() {
   if (currentTTSIndex < ttsSpeechItems.length - 1) {
     currentTTSIndex++;
-    speakNextTTS();
+    speakNextTTS(false);
   }
 }
 
@@ -1511,21 +1544,22 @@ function toggleTTSSpeed() {
   currentTTSSpeedIndex = (currentTTSSpeedIndex + 1) % TTS_SPEEDS.length;
   const speed = TTS_SPEEDS[currentTTSSpeedIndex];
   btnAudioTTSSpeed.textContent = `${speed.toFixed(1)}x`;
-  
+
   if (isTTSSpeaking && !isTTSPaused) {
-    speakNextTTS();
+    speakNextTTS(false);
   }
 }
 
 function initTTSHeartbeat() {
   if (window.ttsHeartbeatInterval) clearInterval(window.ttsHeartbeatInterval);
   window.ttsHeartbeatInterval = setInterval(() => {
-    // 핵심: isTTSPaused(일시정지)이거나 isTTSSpeaking이 아닐 때는 절대 resume 금지
-    // → 화면 숨김 후 복귀해도 정지 상태이면 자동재생 없음
     if (isTTSSpeaking && !isTTSPaused) {
-      window.speechSynthesis.resume();
+      if (window.speechSynthesis.paused) {
+        try { window.speechSynthesis.resume(); } catch (e) {}
+      }
+      startSilentAudio();
     }
-  }, 10000);
+  }, 5000);
 }
 
 
@@ -2180,14 +2214,117 @@ function advancePlanDay() {
 }
 
 // ==========================================
-// 백그라운드 재생 및 미디어 세션 (잠금화면 컨트롤) 지원
+// 백그라운드 재생, 무음 오디오 루프(WAV), 화면 꺼짐 방지(WakeLock) 및 미디어 세션 지원
 // ==========================================
 
+let ttsWakeLock = null;
+let silentAudioBlobUrl = null;
+
+// iOS/Android OS가 오디오 포커스를 회수하지 않도록 1초짜리 미세 진폭(1/32767) WAV 오디오 생성
+function createSilentWavUrl() {
+  if (silentAudioBlobUrl) return silentAudioBlobUrl;
+  try {
+    const sampleRate = 8000;
+    const numSamples = sampleRate * 2; // 2초 루프
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+    const writeStr = (offset, str) => {
+      for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+    };
+    writeStr(0, 'RIFF');
+    view.setUint32(4, 36 + numSamples * 2, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+    // 완전한 0(Digital Silence)이면 모바일 OS가 무음으로 감지해 세션을 끊으므로 사람이 들을 수 없는 ±1 LSB 값 기록
+    for (let i = 0; i < numSamples; i++) {
+      view.setInt16(44 + i * 2, (i % 2 === 0) ? 1 : -1, true);
+    }
+    const blob = new Blob([buffer], { type: 'audio/wav' });
+    silentAudioBlobUrl = URL.createObjectURL(blob);
+    return silentAudioBlobUrl;
+  } catch (e) {
+    return "";
+  }
+}
+
+function ensureSilentAudioElement() {
+  let bgAudio = document.getElementById('bgSilentAudio');
+  if (!bgAudio) {
+    bgAudio = document.createElement('audio');
+    bgAudio.id = 'bgSilentAudio';
+    bgAudio.loop = true;
+    bgAudio.preload = 'auto';
+    bgAudio.setAttribute('playsinline', '');
+    bgAudio.setAttribute('webkit-playsinline', '');
+    bgAudio.style.display = 'none';
+    const wavUrl = createSilentWavUrl();
+    if (wavUrl) bgAudio.src = wavUrl;
+    document.body.appendChild(bgAudio);
+
+    // 오디오가 실행되는 동안 timeupdate 틱마다 iOS/Android 백그라운드 speechSynthesis 잠금 해제
+    bgAudio.addEventListener('timeupdate', function() {
+      if (isTTSSpeaking && !isTTSPaused && 'speechSynthesis' in window) {
+        if (window.speechSynthesis.paused) {
+          try { window.speechSynthesis.resume(); } catch(e) {}
+        }
+      }
+    });
+
+    // OS에 의해 무음 오디오가 일시 중단되면 재생 중일 때 즉시 재개 시도 (기존처럼 stopSilentAudio를 호출하면 세션이 죽음)
+    bgAudio.addEventListener('pause', function() {
+      if (isTTSSpeaking && !isTTSPaused) {
+        setTimeout(() => {
+          if (isTTSSpeaking && !isTTSPaused && bgAudio.paused) {
+            bgAudio.play().catch(() => {});
+          }
+        }, 150);
+      }
+    });
+  } else if (!bgAudio.src) {
+    const wavUrl = createSilentWavUrl();
+    if (wavUrl) bgAudio.src = wavUrl;
+  }
+  return bgAudio;
+}
+
+async function requestScreenWakeLock() {
+  if ('wakeLock' in navigator && isTTSSpeaking && !isTTSPaused) {
+    try {
+      if (!ttsWakeLock) {
+        ttsWakeLock = await navigator.wakeLock.request('screen');
+        ttsWakeLock.addEventListener('release', () => {
+          ttsWakeLock = null;
+        });
+      }
+    } catch (e) {
+      // 배터리 절약 모드나 백그라운드 상태에서는 실패할 수 있음 (무시)
+    }
+  }
+}
+
+function releaseScreenWakeLock() {
+  if (ttsWakeLock) {
+    try { ttsWakeLock.release(); } catch (e) {}
+    ttsWakeLock = null;
+  }
+}
+
 function startSilentAudio() {
-  const bgAudio = document.getElementById('bgSilentAudio');
+  const bgAudio = ensureSilentAudioElement();
   if (bgAudio) {
-    bgAudio.volume = 0.01; // 매우 작은 소리로 유지
-    bgAudio.play().catch(err => console.log("Silent audio play failed:", err));
+    bgAudio.volume = 0.01;
+    if (bgAudio.paused) {
+      bgAudio.play().catch(err => console.log("Silent audio play failed:", err));
+    }
   }
   if ('mediaSession' in navigator) {
     navigator.mediaSession.playbackState = "playing";
@@ -2245,72 +2382,40 @@ function setupMediaSessionHandlers() {
   }
 }
 
-// 백그라운드 전환 시 오디오 세션 유지 + 화면 복귀 시 재생 복구
+// 백그라운드 전환 시: 남은 절 일괄 큐잉(Pre-Queue) + 무음 오디오 유지
+// 화면 복귀 시: WakeLock 재획득 + 끊긴 경우 현재 절부터 자동 복구
 document.addEventListener('visibilitychange', function() {
   if (document.hidden) {
-    // 화면 꺼짐: bgSilentAudio로 세션 유지
-    if (isTTSSpeaking) {
-      const bgAudio = document.getElementById('bgSilentAudio');
-      if (bgAudio) { try { bgAudio.play().catch(function(e){}); } catch(e) {} }
+    if (isTTSSpeaking && !isTTSPaused) {
+      startSilentAudio();
+      // 모바일 브라우저가 백그라운드에서 JS 타이머를 멈추더라도 OS TTS 엔진이 끝까지 읽도록 남은 절들을 큐에 등록
+      enqueueRemainingVersesForBackground();
       if ('speechSynthesis' in window && window.speechSynthesis.paused) {
         try { window.speechSynthesis.resume(); } catch(e) {}
       }
     }
   } else {
-    // 화면 켜짐: 재생 중이었으면 현재 구절부터 재시작 (OS가 끊었을 수 있음)
+    // 화면이 다시 켜졌을 때
     if (isTTSSpeaking && !isTTSPaused) {
+      requestScreenWakeLock();
+      startSilentAudio();
       setTimeout(function() {
         if (!window.speechSynthesis.speaking && isTTSSpeaking && !isTTSPaused) {
-          // speechSynthesis가 멈춰있으면 현재 구절부터 재시작
-          var currentVerse = ttsSpeechItems[currentTTSIndex]
+          // 만약 OS가 백그라운드 세션을 강제 종료했다면 현재 구절부터 즉시 이어서 재생
+          const currentVerse = ttsSpeechItems[currentTTSIndex]
             ? ttsSpeechItems[currentTTSIndex].verse : null;
           isTTSSpeaking = false;
           startTTS(currentVerse);
         } else if (window.speechSynthesis.paused) {
           try { window.speechSynthesis.resume(); } catch(e) {}
         }
-      }, 500);
+      }, 300);
     }
-    // 정지 상태면 아무것도 하지 않음 (자동재생 없음)
   }
 });
 
-// 오디오가 실행되는 동안 틱 단위로 timeupdate가 계속 들어옴. 
-// iOS가 백그라운드 전환 시 speechSynthesis를 잠그는 현상을 이 틱 주기 마다 강제로 .resume()을 때려 잠금 해제함!
-// 윈도우 로드 완료 이후에 리스너 바인딩 진행
 window.addEventListener("DOMContentLoaded", () => {
-  const bgSilentAudioEl = document.getElementById('bgSilentAudio');
-  if (bgSilentAudioEl) {
-    bgSilentAudioEl.addEventListener('timeupdate', function() {
-      if (isTTSSpeaking && 'speechSynthesis' in window) {
-        if (window.speechSynthesis.paused) {
-          try { window.speechSynthesis.resume(); } catch(e) {}
-        }
-      }
-    });
-    bgSilentAudioEl.addEventListener('pause', function() {
-      if (isTTSSpeaking && !isTTSPaused) {
-        stopSilentAudio();
-      }
-    });
-  }
-});
-
-// 화면 켜짐 복귀 시 변수/UI 동기화
-document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible') {
-    if ('speechSynthesis' in window) {
-      if (window.speechSynthesis.speaking) {
-        if (window.speechSynthesis.paused) {
-          isTTSSpeaking = false;
-          isTTSPaused = true;
-        } else {
-          isTTSSpeaking = true;
-          isTTSPaused = false;
-        }
-      }
-    }
-  }
+  ensureSilentAudioElement();
 });
 
 // 반복 모드 토글

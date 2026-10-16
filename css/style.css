@@ -321,6 +321,20 @@ body.bible-view-active {
   overflow: hidden !important;
 }
 
+/* 성경 탭(iframe)이 다른 탭으로 전환되어도 백그라운드 성경 오디오(TTS)가 끊기지 않도록 display:none 대신 화면 밖 배치 유지 */
+#view-bible.hidden {
+  display: block !important;
+  position: fixed !important;
+  left: -9999px !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+  z-index: -1 !important;
+}
+
 /* ==================== 화면 글씨 크기 조절 (Font Size Scaling) ==================== */
 html.font-size-small {
   font-size: 14.5px;
