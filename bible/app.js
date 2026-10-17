@@ -2578,7 +2578,7 @@ function updateRepeatModeButton() {
   } else if (mode === "VERSE") {
     btnAudioTTSRepeat.textContent = "🔂 절반복";
   } else if (mode === "RANGE") {
-    btnAudioTTSRepeat.textContent = "🎯 구간반복";
+    btnAudioTTSRepeat.textContent = "구간반복";
   } else {
     btnAudioTTSRepeat.textContent = "🔄 연속";
   }
