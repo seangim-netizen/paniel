@@ -1578,3 +1578,262 @@ textarea {
 body.tts-active .app-content {
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 108px) !important;
 }
+
+/* ==========================================================================
+   📋 구절 꾸욱 눌러 복사
+   ========================================================================== */
+.verse-card {
+  -webkit-touch-callout: none; /* iOS 길게 누르기 기본 메뉴 차단 */
+  -webkit-tap-highlight-color: transparent;
+}
+.verse-card.long-press-armed {
+  transform: scale(0.975);
+  border-color: var(--accent-gold) !important;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.25), 0 6px 18px rgba(0, 0, 0, 0.12);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.verse-card.verse-copied {
+  animation: verseCopiedFlash 0.9s ease;
+}
+@keyframes verseCopiedFlash {
+  0%   { background-color: rgba(16, 185, 129, 0.28); box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+/* 토스트가 재생 박스/구간 배지에 가려지지 않도록 위로 띄움 */
+.toast {
+  z-index: 1200;
+  bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 16px + var(--toast-lift, 0px));
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.tts-active { --toast-lift: 64px; }
+body.range-badge-visible { --toast-lift: 52px; }
+body.tts-active.range-badge-visible { --toast-lift: 112px; }
+
+/* ==========================================================================
+   🎯 구간 반복 듣기
+   ========================================================================== */
+.btn-header-action.btn-range-action {
+  color: var(--accent-gold);
+  border-color: rgba(217, 119, 6, 0.45);
+}
+
+/* 구간에 포함된 구절 표시 */
+.verse-card.in-repeat-range {
+  border-left-color: var(--accent-gold);
+  border-left-width: 6px;
+  background-image: linear-gradient(90deg, rgba(217, 119, 6, 0.08), rgba(217, 119, 6, 0) 70%);
+}
+.verse-card.repeat-range-start::before,
+.verse-card.repeat-range-end::after {
+  position: absolute;
+  left: 10px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--accent-gold);
+  background: var(--card-bg);
+  padding: 0 6px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+}
+.verse-card.repeat-range-start::before {
+  content: "🎯 구간 시작";
+  top: -9px;
+}
+.verse-card.repeat-range-end::after {
+  content: "구간 끝 🔁";
+  bottom: -9px;
+}
+
+/* 구간 반복 상태 배지 */
+.range-repeat-badge {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 10px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(217, 119, 6, 0.35);
+  z-index: 950;
+  animation: rangeBadgeIn 0.25s ease;
+  max-width: calc(100vw - 24px);
+}
+.range-repeat-badge.hidden {
+  display: none;
+}
+body.tts-active .range-repeat-badge {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 56px + 62px);
+}
+@keyframes rangeBadgeIn {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.range-badge-label {
+  background: none;
+  border: none;
+  color: inherit;
+  font-weight: 800;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 4px 4px;
+}
+.range-badge-clear {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.range-badge-clear:active {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* 구간 반복 모달 (재생 박스 위에 표시) */
+#rangeModal {
+  z-index: 1100;
+}
+.range-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.range-chapter-label {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-align: center;
+}
+.range-selects {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+}
+.range-select-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.range-select-field select {
+  width: 100%;
+  height: 48px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  text-align: center;
+  text-align-last: center;
+  border-radius: 12px;
+  border: 2px solid var(--border-color);
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+.range-select-field select:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+.range-tilde {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--accent-gold);
+  padding-bottom: 8px;
+}
+.range-count-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: -6px;
+}
+.range-count-group {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.range-count-btn {
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.range-count-btn.active {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(217, 119, 6, 0.3);
+}
+.range-preview {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.5;
+  min-height: 2.6em;
+}
+.range-preview strong {
+  color: var(--accent-gold);
+}
+.range-preview-snippet {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  opacity: 0.85;
+  word-break: keep-all;
+}
+.range-play-btn {
+  width: 100%;
+  height: 50px;
+  font-size: 1.05rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+}
+.range-sub-actions {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 8px;
+}
+.btn-range-sub {
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.btn-range-sub:active {
+  background: var(--border-color);
+}
+.btn-range-sub.btn-range-clear {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+.range-tip {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  text-align: center;
+}

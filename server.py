@@ -69,6 +69,10 @@ def git_push_async(target_dir, commit_msg):
                 st = subprocess.run(['git', 'status', '--porcelain'], cwd=target_dir, capture_output=True, text=True)
                 if st.stdout.strip():
                     subprocess.run(['git', 'commit', '-m', commit_msg], cwd=target_dir, check=True)
+                    # GitHub Actions 자동 동기화도 같은 저장소에 커밋하므로 푸시 전에 최신 내용과 합침
+                    pull = subprocess.run(['git', 'pull', '--rebase', '--autostash', '-X', 'theirs', 'origin', 'main'], cwd=target_dir)
+                    if pull.returncode != 0:
+                        subprocess.run(['git', 'rebase', '--abort'], cwd=target_dir)
                     subprocess.run(['git', 'push', 'origin', 'main'], cwd=target_dir, check=True)
                     print(f"✓ [Git Push] {os.path.basename(target_dir)} 최신 일기/댓글 GitHub 자동 배포 완료!", flush=True)
         except Exception as e:

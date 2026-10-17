@@ -353,6 +353,13 @@ class JournalStore {
     const dates = Object.keys(this.journals).sort().reverse();
     if (dates.length === 0) return 0;
 
+    const formatDate = (dateObj) => {
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
     const todayStr = this.getTodayDateString();
     let streak = 0;
     const [y, m, d] = todayStr.split('-').map(Number);
@@ -363,12 +370,20 @@ class JournalStore {
       curr.setDate(curr.getDate() - 1);
     }
 
-    const formatDate = (dateObj) => {
-      const year = dateObj.getFullYear();
-      const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const day = String(dateObj.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
+    // 어제 일기도 없을 때: 마지막 동기화가 "마지막 일기 다음날"이 끝나기 전이었다면
+    // 아직 확인이 안 된 것일 뿐 연속이 끊긴 게 아니므로 마지막 일기 날짜부터 계산
+    if (!this.journals[formatDate(curr)]) {
+      const lastDateStr = dates[0];
+      const exportedAt = window.INITIAL_IMPORTED_DATA && window.INITIAL_IMPORTED_DATA.exportedAt;
+      if (lastDateStr && exportedAt) {
+        const [ly, lm, ld] = lastDateStr.split('-').map(Number);
+        const unverifiedUntil = new Date(ly, lm - 1, ld + 2); // 마지막 일기 다음날 자정 이후
+        const syncedAt = new Date(String(exportedAt).replace(/(\.\d{3})\d+/, '$1')); // Safari용 마이크로초 제거
+        if (!isNaN(syncedAt) && syncedAt < unverifiedUntil) {
+          curr = new Date(ly, lm - 1, ld);
+        }
+      }
+    }
 
     while (true) {
       const checkStr = formatDate(curr);

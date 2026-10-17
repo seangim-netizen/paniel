@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>📖 김시웅 권사 성경통독일기장</title>
-  <link rel="stylesheet" href="style.css?v=20261015_clean">
+  <link rel="stylesheet" href="style.css?v=20261017_range">
   <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -38,6 +38,7 @@
       <button id="btnSearch" class="btn-header-action" title="성경 검색">성경검색</button>
       <button id="btnProgress" class="btn-header-action" title="통독 현황표">통독현황</button>
       <button id="btnSettings" class="btn-header-action" title="설정">환경설정</button>
+      <button id="btnRangeRepeat" class="btn-header-action btn-range-action" title="구간 반복 듣기 (예: 12~20절)">구간반복</button>
     </div>
   </header>
 
@@ -68,6 +69,12 @@
     <button id="btnAudioTTSNext" class="btn-tts-ctrl" title="다음 구절">다음 ⏭</button>
     <button id="btnAudioTTSSpeed" class="btn-tts-ctrl" title="배속 조절">1.0x</button>
     <button id="btnAudioTTSRepeat" class="btn-tts-ctrl" title="반복 모드">🔄 연속</button>
+  </div>
+
+  <!-- 구간 반복 상태 배지 (구간 반복 활성 시 표시) -->
+  <div id="rangeRepeatBadge" class="range-repeat-badge hidden" role="status" aria-live="polite">
+    <button id="btnRangeBadgeEdit" class="range-badge-label" title="구간 변경">🎯 <span id="rangeBadgeText">구간 반복</span></button>
+    <button id="btnRangeBadgeClear" class="range-badge-clear" title="구간 반복 해제" aria-label="구간 반복 해제">✕</button>
   </div>
 
   <!-- 하단 퀵 네비게이션 및 컨트롤러 -->
@@ -274,13 +281,51 @@
     </div>
   </div>
 
+  <!-- 구간 반복 듣기 모달 -->
+  <div id="rangeModal" class="modal">
+    <div class="modal-content range-modal-content">
+      <div class="modal-header">
+        <h3>🎯 구간 반복 듣기</h3>
+        <button id="btnCloseRangeModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body range-body">
+        <p id="rangeModalChapter" class="range-chapter-label">창세기 1장</p>
+        <div class="range-selects">
+          <label class="range-select-field">
+            <span>시작</span>
+            <select id="rangeStartSelect" aria-label="시작 절"></select>
+          </label>
+          <span class="range-tilde">~</span>
+          <label class="range-select-field">
+            <span>끝</span>
+            <select id="rangeEndSelect" aria-label="끝 절"></select>
+          </label>
+        </div>
+        <div class="range-count-label">반복 횟수</div>
+        <div class="range-count-group">
+          <button class="range-count-btn active" data-count="0" id="rangeCountInfinite">∞ 무한</button>
+          <button class="range-count-btn" data-count="3" id="rangeCount3">3회</button>
+          <button class="range-count-btn" data-count="5" id="rangeCount5">5회</button>
+          <button class="range-count-btn" data-count="10" id="rangeCount10">10회</button>
+        </div>
+        <p id="rangePreview" class="range-preview"></p>
+        <button id="btnRangePlay" class="btn-primary range-play-btn">▶ 구간 반복 재생</button>
+        <div class="range-sub-actions">
+          <button id="btnRangeCopy" class="btn-range-sub">📋 구간 복사</button>
+          <button id="btnRangeClear" class="btn-range-sub btn-range-clear">해제</button>
+        </div>
+        <p class="range-tip">💡 본문 구절을 <strong>꾸욱 누르면</strong> 말씀이 복사됩니다.</p>
+      </div>
+    </div>
+  </div>
+
   <!-- 토스트 알림 -->
   <div id="toast" class="toast hidden"></div>
 
   <!-- 성경 DB 스크립트 로드 (66권 통합 DB) -->
-  <script src="./bible_db_66.js?v=20261015_clean"></script>
+  <script src="./bible_db_66.js?v=20261017_clean2"></script>
   
   <!-- 애플리케이션 로직 -->
-  <script src="app.js?v=20261016_bg"></script>
+  <script src="app.js?v=20261017_range"></script>
 </body>
 </html>

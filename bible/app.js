@@ -128,6 +128,21 @@ let selectedVerseNum = null;
 let clickTimer = null;
 const DBLCLICK_DELAY = 280; // ms
 
+// 합쳐진 절 표기 (예: 18절 데이터가 "-19 본문" → 18~19절)
+const MERGED_VERSE_PREFIX = /^-(\d+)\s+/;
+
+// 📋 꾸욱 눌러 복사 상태
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_TOLERANCE = 10; // px
+let longPress = null; // { card, x, y, timer, armed, copied }
+let suppressVerseClickUntil = 0;
+
+// 🎯 구간 반복 상태 (예: 12~20절)
+const BG_RANGE_PRELOAD_LOOPS = 5; // 화면 꺼짐 시 미리 큐에 넣을 반복 횟수
+let repeatRange = null; // { book, chapter, start, end, maxLoops(0=무한), loopCount }
+let rangeModalCount = 0;
+const rangeModal = document.getElementById("rangeModal");
+
 // DOM 요소 참조
 const quickBookSelect = document.getElementById("quickBookSelect");
 const quickChapterSelect = document.getElementById("quickChapterSelect");
@@ -277,6 +292,8 @@ function loadSettings() {
       console.error("Error loading settings:", e);
     }
   }
+  // 구간 반복은 앱을 다시 열면 구간 정보가 없으므로 연속 모드로 복귀
+  if (state.repeatMode === "RANGE") state.repeatMode = "NONE";
 }
 
 // 설정 저장
@@ -546,7 +563,12 @@ function setupEventListeners() {
     if (e.target === searchModal) closeModal(searchModal);
     if (e.target === progressModal) closeModal(progressModal);
     if (e.target === backupModal) closeModal(backupModal);
+    if (e.target === rangeModal) closeModal(rangeModal);
   });
+
+  // 📋 구절 꾸욱 눌러 복사 + 🎯 구간 반복 듣기
+  setupVerseLongPress();
+  setupRangeRepeatControls();
 
   // 통독 계획 서브 탭 전환
   if (tabProgressBoard && tabReadingPlan) {
@@ -823,6 +845,11 @@ function executeRender() {
   const book = state.currentBook;
   const chapter = state.currentChapter;
   const chStr = String(chapter);
+
+  // 다른 장으로 이동하면 구간 반복 자동 해제
+  if (repeatRange && (repeatRange.book !== book || Number(repeatRange.chapter) !== Number(chapter))) {
+    clearRepeatRange();
+  }
   
   const pCode = state.primaryTranslation;
   const sCode = state.secondaryTranslation;
@@ -872,9 +899,22 @@ function executeRender() {
   }
   
   // 구절별 루프
+  let coveredUntil = 0; // 합쳐진 절(예: 18-19)이 이미 포함한 마지막 절 번호
   for (let i = 0; i < totalVerses; i++) {
     const verseNum = i + 1;
+    // 앞 카드(18-19절)에 이미 포함된 절은 중복 조각이므로 건너뜀
+    if (verseNum <= coveredUntil) continue;
     let primaryText = (primaryVerses[i] || "").replace(/○/g, pCode === "SB" ? "○" : "").trim();
+
+    // 합쳐진 절 표기 분리: "-19 본문" → 18~19절 (본문 앞의 "-19" 숫자 노출 방지)
+    let verseEndNum = verseNum;
+    const mergedMatch = primaryText.match(MERGED_VERSE_PREFIX);
+    if (mergedMatch) {
+      verseEndNum = Math.min(totalVerses, Math.max(verseNum, parseInt(mergedMatch[1], 10) || verseNum));
+      primaryText = primaryText.slice(mergedMatch[0].length);
+    }
+    coveredUntil = verseEndNum;
+    const verseLabel = verseEndNum > verseNum ? `${verseNum}-${verseEndNum}` : `${verseNum}`;
     
     if (!primaryText && (!secondaryVerses || !secondaryVerses[i])) {
       continue;
@@ -882,6 +922,7 @@ function executeRender() {
     
     const card = document.createElement("div");
     card.setAttribute("data-verse", verseNum);
+    card.setAttribute("data-verse-end", verseEndNum);
     
     // 메모 존재 여부
     const noteKey = `${book}_${chapter}_${verseNum}`;
@@ -895,10 +936,19 @@ function executeRender() {
     ` : '';
     
     // 절 번호 인라인화 렌더링 (요구사항 2)
-    const numBadgeHtml = `<span class="verse-num">${verseNum}</span>`;
+    const numBadgeHtml = `<span class="verse-num">${verseLabel}</span>`;
+    let copySecondaryText = "";
     
     if (sCode !== "NONE" && secondaryVerses) {
-      let secondaryText = (secondaryVerses[i] || "").replace(/○/g, sCode === "SB" ? "○" : "").trim();
+      const secondaryParts = [];
+      for (let k = i; k < verseEndNum; k++) {
+        let part = (secondaryVerses[k] || "").replace(/○/g, sCode === "SB" ? "○" : "").trim();
+        part = part.replace(MERGED_VERSE_PREFIX, "");
+        if (k > i && /^\(\d*절에 포함되어 있음\)$/.test(part)) continue;
+        if (part) secondaryParts.push(part);
+      }
+      let secondaryText = secondaryParts.join(" ");
+      copySecondaryText = secondaryText;
       card.className = `verse-card compare-mode ${hasNote ? 'has-note' : ''}`;
       
       card.innerHTML = `
@@ -922,8 +972,22 @@ function executeRender() {
       `;
     }
     
+    // 꾸욱 눌러 복사용 본문 데이터
+    card._verseCopy = {
+      label: verseLabel,
+      primary: primaryText,
+      secondary: copySecondaryText,
+      pCode,
+      sCode: copySecondaryText ? sCode : "NONE"
+    };
+    
     // ── 클릭/더블클릭 분기 ─────────────────────────────────────────────
     card.addEventListener("click", (e) => {
+      // 꾸욱 눌러 복사 직후의 클릭은 무시 (선택/메모/점프 동작 겹침 방지)
+      if (Date.now() < suppressVerseClickUntil) {
+        e.stopPropagation();
+        return;
+      }
       if (isTTSSpeaking) {
         // 재생 중: 클릭하면 해당 구절로 점프 (재생 계속)
         jumpToTTSVerse(verseNum);
@@ -964,6 +1028,9 @@ function executeRender() {
 
   // 선택 구절 하이라이트 복원 (역본/장 변경 후에도 유지)
   applySelectedVerseHighlight();
+  // 구간 반복 표시 복원
+  applyRepeatRangeHighlight();
+  updateRangeBadge();
 
   // 스크롤 위치 결정:
   //   선택 구절 있음 → 그 구절 위치로 스크롤
@@ -1175,8 +1242,14 @@ function togglePlayTTS() {
       updateMediaSession();
     }
   } else {
-    // 선택된 구절이 있으면 그 구절부터, 없으면 처음(1절)부터
-    startTTS(selectedVerseNum);
+    // 구간 반복 중이면 구간 시작 절부터 처음 회차로, 아니면 선택된 구절(없으면 1절)부터
+    const activeRange = getActiveRepeatRange();
+    if (activeRange) {
+      activeRange.loopCount = 0;
+      startTTS(activeRange.start);
+    } else {
+      startTTS(selectedVerseNum);
+    }
   }
 }
 
@@ -1219,13 +1292,14 @@ function executeStartTTS(startVerse) {
     textToSpeak = textToSpeak.replace(/\[[^\]]*\]/g, "");
     textToSpeak = textToSpeak.replace(/<[^>]*>/g, "");
     textToSpeak = textToSpeak.replace(/\([^)]*\)/g, "");
-    // 본문 앞부분에 삽입된 절 번호 숫자("1", "2" 등) 제거
-    textToSpeak = textToSpeak.replace(/^\d+\s*/, "").trim();
+    // 본문 앞부분에 삽입된 절 번호 숫자("1", "2", 합쳐진 절 "18-19" 등) 제거
+    textToSpeak = textToSpeak.replace(/^\d+(?:-\d+)?\s*/, "").trim();
     
     if (textToSpeak) {
       ttsSpeechItems.push({
         element: card,
         verse: parseInt(verseNum),
+        verseEnd: parseInt(card.getAttribute("data-verse-end")) || parseInt(verseNum),
         text: textToSpeak // 절 번호("1절.")를 읽지 않고 순수 본문만 낭독 (요구사항 1)
       });
     }
@@ -1236,9 +1310,10 @@ function executeStartTTS(startVerse) {
   isTTSSpeaking = true;
   isTTSPaused = false;
 
-  // 시작 구절 지정 시 해당 인덱스부터, 없으면 처음(0)부터
+  // 시작 구절 지정 시 해당 인덱스부터(합쳐진 절 포함), 없으면 처음(0)부터
   if (startVerse != null) {
-    const startIdx = ttsSpeechItems.findIndex(item => item.verse === startVerse);
+    let startIdx = ttsSpeechItems.findIndex(item => item.verse <= startVerse && startVerse <= item.verseEnd);
+    if (startIdx === -1) startIdx = ttsSpeechItems.findIndex(item => item.verse >= startVerse);
     currentTTSIndex = startIdx !== -1 ? startIdx : 0;
   } else {
     currentTTSIndex = 0;
@@ -1254,6 +1329,7 @@ function executeStartTTS(startVerse) {
   document.body.classList.add("tts-active");
   if (btnAudioTTSRepeat) updateRepeatModeButton();
   btnAudioTTSPlay.textContent = "❚❚ 일시정지";
+  updateRangeBadge();
 
   initTTSHeartbeat();
   startSilentAudio();
@@ -1334,6 +1410,23 @@ let isBackgroundQueueActive = false;
 
 function speakNextTTS(fromAutoEnd = false) {
   if (!isTTSSpeaking) return;
+
+  // 🎯 구간 반복: 끝 절을 지나면 시작 절로 되돌아가기 (횟수 제한 시 완료 후 정지)
+  const activeRange = getActiveRepeatRange();
+  if (activeRange) {
+    const { startIdx, endIdx } = getRepeatRangeIndices(activeRange);
+    if (startIdx !== -1 && endIdx !== -1 && currentTTSIndex > endIdx) {
+      activeRange.loopCount++;
+      if (activeRange.maxLoops > 0 && activeRange.loopCount >= activeRange.maxLoops) {
+        stopTTS();
+        showToast(`🎯 ${formatRangeLabel(activeRange)} 구간 ${activeRange.maxLoops}회 반복 완료`);
+        updateRangeBadge();
+        return;
+      }
+      currentTTSIndex = startIdx;
+      updateRangeBadge();
+    }
+  }
 
   if (currentTTSIndex >= ttsSpeechItems.length) {
     if (state.repeatMode === "CHAPTER") {
@@ -1447,16 +1540,42 @@ function speakNextTTS(fromAutoEnd = false) {
 // 모바일 화면 꺼짐(백그라운드) 시 JS 타이머가 멈춰도 OS TTS 엔진이 끝까지 읽도록 남은 구절 일괄 큐잉
 function enqueueRemainingVersesForBackground() {
   if (!isTTSSpeaking || isTTSPaused || isBackgroundQueueActive) return;
-  isBackgroundQueueActive = true;
 
-  for (let idx = currentTTSIndex + 1; idx < ttsSpeechItems.length; idx++) {
-    const nextItem = ttsSpeechItems[idx];
+  // 미리 큐에 넣을 순서 구성: { idx, loop } (loop = 구간 반복 회차 증가분)
+  const sequence = [];
+  const activeRange = getActiveRepeatRange();
+  if (activeRange) {
+    const { startIdx, endIdx } = getRepeatRangeIndices(activeRange);
+    if (startIdx === -1 || endIdx === -1) return;
+    for (let idx = currentTTSIndex + 1; idx <= endIdx; idx++) sequence.push({ idx, loop: 0 });
+    const loopsLeft = activeRange.maxLoops > 0
+      ? activeRange.maxLoops - activeRange.loopCount - 1
+      : BG_RANGE_PRELOAD_LOOPS;
+    for (let l = 1; l <= Math.min(loopsLeft, BG_RANGE_PRELOAD_LOOPS); l++) {
+      for (let idx = startIdx; idx <= endIdx; idx++) sequence.push({ idx, loop: l });
+    }
+  } else {
+    for (let idx = currentTTSIndex + 1; idx < ttsSpeechItems.length; idx++) sequence.push({ idx, loop: 0 });
+  }
+
+  // 남은 구절이 없으면 큐잉하지 않음 (현재 구절의 onend가 다음 동작을 이어서 처리)
+  if (sequence.length === 0) return;
+
+  isBackgroundQueueActive = true;
+  const baseLoop = activeRange ? activeRange.loopCount : 0;
+
+  sequence.forEach((entry, seqPos) => {
+    const nextItem = ttsSpeechItems[entry.idx];
     const bgUtterance = createConfiguredUtterance(nextItem);
-    const targetIdx = idx;
+    const isLast = seqPos === sequence.length - 1;
 
     bgUtterance.onstart = () => {
       if (!isTTSSpeaking) return;
-      currentTTSIndex = targetIdx;
+      currentTTSIndex = entry.idx;
+      if (activeRange && repeatRange === activeRange) {
+        activeRange.loopCount = baseLoop + entry.loop;
+        updateRangeBadge();
+      }
       bibleViewerEl.querySelectorAll(".is-reading-speaking").forEach(el => el.classList.remove("is-reading-speaking"));
       if (nextItem.element) nextItem.element.classList.add("is-reading-speaking");
       updateMediaSession();
@@ -1464,19 +1583,21 @@ function enqueueRemainingVersesForBackground() {
 
     bgUtterance.onend = () => {
       if (!isTTSSpeaking || isTTSPaused) return;
-      if (targetIdx >= ttsSpeechItems.length - 1) {
+      if (isLast) {
         isBackgroundQueueActive = false;
-        currentTTSIndex = ttsSpeechItems.length;
+        // 구간 반복: 끝 절 다음 인덱스로 → speakNextTTS가 시작 절로 되돌림 / 일반: 장 끝 처리
+        currentTTSIndex = activeRange ? entry.idx + 1 : ttsSpeechItems.length;
         speakNextTTS(true);
       }
     };
 
     window.speechSynthesis.speak(bgUtterance);
-  }
+  });
 }
 
 function jumpToTTSVerse(verseNum) {
-  const targetIdx = ttsSpeechItems.findIndex(item => item.verse === verseNum);
+  let targetIdx = ttsSpeechItems.findIndex(item => item.verse === verseNum);
+  if (targetIdx === -1) targetIdx = ttsSpeechItems.findIndex(item => item.verse <= verseNum && verseNum <= (item.verseEnd || item.verse));
   if (targetIdx !== -1) {
     currentTTSIndex = targetIdx;
     isTTSPaused = false;
@@ -1524,6 +1645,7 @@ function stopTTS() {
   bibleViewerEl.querySelectorAll(".is-reading-speaking").forEach(el => {
     el.classList.remove("is-reading-speaking");
   });
+  updateRangeBadge();
 }
 
 function playPrevTTS() {
@@ -2418,7 +2540,7 @@ window.addEventListener("DOMContentLoaded", () => {
   ensureSilentAudioElement();
 });
 
-// 반복 모드 토글
+// 반복 모드 토글: 연속 → 장반복 → 절반복 → 구간반복 → 연속
 function toggleRepeatMode() {
   if (!state.repeatMode) state.repeatMode = "NONE";
   
@@ -2428,11 +2550,22 @@ function toggleRepeatMode() {
   } else if (state.repeatMode === "CHAPTER") {
     state.repeatMode = "VERSE";
     showToast("절 반복 낭독 모드 🔂");
+  } else if (state.repeatMode === "VERSE") {
+    if (repeatRange && repeatRange.book === state.currentBook && Number(repeatRange.chapter) === Number(state.currentChapter)) {
+      state.repeatMode = "RANGE";
+      showToast(`구간 반복 모드 🎯 (${formatRangeLabel(repeatRange)})`);
+    } else {
+      state.repeatMode = "NONE";
+      showToast("반복할 구간을 선택해 주세요 🎯");
+      openRangeModal();
+    }
   } else {
     state.repeatMode = "NONE";
     showToast("연속 낭독 모드 🔄");
   }
   updateRepeatModeButton();
+  applyRepeatRangeHighlight();
+  updateRangeBadge();
   saveSettings();
 }
 
@@ -2444,8 +2577,459 @@ function updateRepeatModeButton() {
     btnAudioTTSRepeat.textContent = "🔁 장반복";
   } else if (mode === "VERSE") {
     btnAudioTTSRepeat.textContent = "🔂 절반복";
+  } else if (mode === "RANGE") {
+    btnAudioTTSRepeat.textContent = "🎯 구간반복";
   } else {
     btnAudioTTSRepeat.textContent = "🔄 연속";
+  }
+}
+
+/* ==========================================================================
+   📋 구절 꾸욱 눌러 복사
+   - 0.5초 꾸욱 누르면 진동 + 눌림 효과 → 손을 떼는 순간 복사
+     (iPhone Safari는 손을 뗄 때(사용자 제스처 안에서) 복사해야 클립보드가 허용됨)
+   - 안드로이드 길게 누르기 메뉴 / PC 마우스 우클릭은 즉시 복사
+   ========================================================================== */
+
+function setupVerseLongPress() {
+  if (!bibleViewerEl) return;
+
+  bibleViewerEl.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const card = e.target.closest(".verse-card");
+    if (!card) return;
+    cancelLongPress();
+    const lp = { card, x: e.clientX, y: e.clientY, armed: false, copied: false, timer: null };
+    lp.timer = setTimeout(() => {
+      if (longPress !== lp) return;
+      lp.armed = true;
+      card.classList.add("long-press-armed");
+      if (navigator.vibrate) {
+        try { navigator.vibrate(25); } catch (err) {}
+      }
+    }, LONG_PRESS_MS);
+    longPress = lp;
+  });
+
+  bibleViewerEl.addEventListener("pointermove", (e) => {
+    if (!longPress || longPress.armed) return;
+    if (Math.abs(e.clientX - longPress.x) > LONG_PRESS_MOVE_TOLERANCE ||
+        Math.abs(e.clientY - longPress.y) > LONG_PRESS_MOVE_TOLERANCE) {
+      cancelLongPress();
+    }
+  });
+
+  const finishLongPress = () => {
+    if (!longPress) return;
+    if (longPress.armed && !longPress.copied) {
+      longPress.copied = true;
+      suppressVerseClickUntil = Date.now() + 700;
+      copyVerseCard(longPress.card);
+    }
+    endLongPress();
+  };
+  bibleViewerEl.addEventListener("pointerup", finishLongPress);
+  bibleViewerEl.addEventListener("touchend", finishLongPress);
+  bibleViewerEl.addEventListener("pointercancel", () => {
+    // 이미 꾸욱 눌림이 확정된 상태면 복사 시도, 아니면 취소 (스크롤 시작 등)
+    if (longPress && longPress.armed) finishLongPress();
+    else cancelLongPress();
+  });
+
+  bibleViewerEl.addEventListener("contextmenu", (e) => {
+    const card = e.target.closest(".verse-card");
+    if (!card) return;
+    e.preventDefault();
+    if (longPress && longPress.card === card) {
+      if (!longPress.copied) {
+        longPress.armed = true;
+        longPress.copied = true;
+        card.classList.add("long-press-armed");
+        suppressVerseClickUntil = Date.now() + 700;
+        copyVerseCard(card);
+      }
+    } else if (!longPress) {
+      // PC 마우스 우클릭
+      copyVerseCard(card);
+    }
+  });
+
+  // 스크롤이 시작되면 꾸욱 누르기 취소
+  const appContent = document.querySelector(".app-content");
+  if (appContent) {
+    appContent.addEventListener("scroll", () => {
+      if (longPress && !longPress.armed) cancelLongPress();
+    }, { passive: true });
+  }
+}
+
+function cancelLongPress() {
+  if (!longPress) return;
+  clearTimeout(longPress.timer);
+  longPress.card.classList.remove("long-press-armed");
+  longPress = null;
+}
+
+function endLongPress() {
+  const lp = longPress;
+  if (!lp) return;
+  clearTimeout(lp.timer);
+  setTimeout(() => lp.card.classList.remove("long-press-armed"), 160);
+  longPress = null;
+}
+
+// 역본 이름에서 "(영어)" 같은 부가 표기 제거
+function getShortTranslationName(code) {
+  const t = TRANSLATION_MAP[code];
+  return t ? t.name.replace(/\s*\(.*\)\s*$/, "") : "";
+}
+
+// 본문 텍스트 정리 (쉬운성경 <소제목> 등 태그 형태 제거)
+function toPlainVerseText(text) {
+  return String(text || "").replace(/<[^>]*>/g, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function buildVerseCopyText(card) {
+  const data = card && card._verseCopy;
+  if (!data) return "";
+  const ref = `${state.currentBook} ${state.currentChapter}:${data.label}`;
+  const primary = toPlainVerseText(data.primary);
+  const pName = getShortTranslationName(data.pCode);
+  if (data.secondary && data.sCode && data.sCode !== "NONE") {
+    const secondary = toPlainVerseText(data.secondary);
+    const sName = getShortTranslationName(data.sCode);
+    return `${primary}\n${secondary}\n- ${ref} (${pName} / ${sName})`;
+  }
+  return `${primary}\n- ${ref} (${pName})`;
+}
+
+function copyVerseCard(card) {
+  const text = buildVerseCopyText(card);
+  if (!text) return;
+  const label = card._verseCopy ? card._verseCopy.label : card.getAttribute("data-verse");
+  copyTextToClipboard(text).then((ok) => {
+    if (ok) {
+      card.classList.remove("verse-copied");
+      void card.offsetWidth; // 애니메이션 재시작
+      card.classList.add("verse-copied");
+      setTimeout(() => card.classList.remove("verse-copied"), 900);
+      showToast(`📋 ${state.currentBook} ${state.currentChapter}:${label} 말씀이 복사되었습니다`);
+    } else {
+      showToast("복사에 실패했습니다. 다시 꾸욱 눌러 주세요.");
+    }
+  });
+}
+
+// 클립보드 복사: iOS Safari는 사용자 제스처 안에서 동기 execCommand가 가장 확실 → 실패 시 Clipboard API
+function copyTextToClipboard(text) {
+  let ok = false;
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;" +
+      "-webkit-user-select:text;user-select:text;";
+    document.body.appendChild(ta);
+    try { ta.focus({ preventScroll: true }); } catch (e) { ta.focus(); }
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch (e) {
+    ok = false;
+  }
+  if (ok) return Promise.resolve(true);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(() => true).catch(() => false);
+  }
+  return Promise.resolve(false);
+}
+
+
+/* ==========================================================================
+   🎯 구간 반복 듣기 (예: 12절 ~ 20절 선택 후 반복 청취)
+   ========================================================================== */
+
+function formatRangeLabel(range) {
+  if (!range) return "";
+  return range.start === range.end ? `${range.start}절` : `${range.start}~${range.end}절`;
+}
+
+// 현재 장에 해당하는 구간이 있고 구간반복 모드일 때만 활성 구간 반환
+function getActiveRepeatRange() {
+  if (state.repeatMode !== "RANGE" || !repeatRange) return null;
+  if (repeatRange.book !== state.currentBook || Number(repeatRange.chapter) !== Number(state.currentChapter)) return null;
+  return repeatRange;
+}
+
+// 낭독 목록(ttsSpeechItems)에서 구간의 시작/끝 인덱스 계산 (합쳐진 절 포함)
+function getRepeatRangeIndices(range) {
+  let startIdx = -1;
+  let endIdx = -1;
+  ttsSpeechItems.forEach((item, idx) => {
+    const itemEnd = item.verseEnd || item.verse;
+    if (itemEnd >= range.start && item.verse <= range.end) {
+      if (startIdx === -1) startIdx = idx;
+      endIdx = idx;
+    }
+  });
+  return { startIdx, endIdx };
+}
+
+function getRenderedVerseCards() {
+  return Array.from(bibleViewerEl.querySelectorAll(".verse-card")).map(card => {
+    const verse = parseInt(card.getAttribute("data-verse"), 10);
+    const verseEnd = parseInt(card.getAttribute("data-verse-end"), 10) || verse;
+    return { card, verse, verseEnd, label: verseEnd > verse ? `${verse}-${verseEnd}` : `${verse}` };
+  });
+}
+
+function applyRepeatRangeHighlight() {
+  bibleViewerEl.querySelectorAll(".in-repeat-range").forEach(el => {
+    el.classList.remove("in-repeat-range", "repeat-range-start", "repeat-range-end");
+  });
+  const range = getActiveRepeatRange();
+  if (!range) return;
+  const inRange = getRenderedVerseCards().filter(v => v.verseEnd >= range.start && v.verse <= range.end);
+  inRange.forEach(v => v.card.classList.add("in-repeat-range"));
+  if (inRange.length) {
+    inRange[0].card.classList.add("repeat-range-start");
+    inRange[inRange.length - 1].card.classList.add("repeat-range-end");
+  }
+}
+
+function updateRangeBadge() {
+  const badge = document.getElementById("rangeRepeatBadge");
+  const textEl = document.getElementById("rangeBadgeText");
+  if (!badge || !textEl) return;
+  const range = getActiveRepeatRange();
+  document.body.classList.toggle("range-badge-visible", !!range);
+  if (!range) {
+    badge.classList.add("hidden");
+    return;
+  }
+  let loopText;
+  if (range.maxLoops > 0) {
+    loopText = `${Math.min(range.loopCount + 1, range.maxLoops)}/${range.maxLoops}회`;
+  } else {
+    loopText = isTTSSpeaking ? `${range.loopCount + 1}회째 · 무한` : "무한 반복";
+  }
+  textEl.textContent = `${formatRangeLabel(range)} 반복 · ${loopText}`;
+  badge.classList.remove("hidden");
+}
+
+function clearRepeatRange() {
+  repeatRange = null;
+  if (state.repeatMode === "RANGE") {
+    state.repeatMode = "NONE";
+    saveSettings();
+  }
+  updateRepeatModeButton();
+  applyRepeatRangeHighlight();
+  updateRangeBadge();
+}
+
+// 셀렉트에서 value 이하 중 가장 가까운 옵션 선택 (없으면 첫 옵션)
+function selectClosestOption(selectEl, value, preferUpper = false) {
+  const opts = Array.from(selectEl.options).map(o => parseInt(o.value, 10));
+  if (!opts.length) return;
+  let chosen = preferUpper ? opts.find(v => v >= value) : [...opts].reverse().find(v => v <= value);
+  if (chosen === undefined) chosen = preferUpper ? opts[opts.length - 1] : opts[0];
+  selectEl.value = String(chosen);
+}
+
+function openRangeModal() {
+  if (!rangeModal) return;
+  const verses = getRenderedVerseCards();
+  if (verses.length === 0) {
+    showToast("본문을 불러온 뒤 다시 시도해 주세요.");
+    return;
+  }
+  const startSel = document.getElementById("rangeStartSelect");
+  const endSel = document.getElementById("rangeEndSelect");
+  startSel.innerHTML = "";
+  endSel.innerHTML = "";
+  verses.forEach(v => {
+    startSel.add(new Option(`${v.label}절`, String(v.verse)));
+    endSel.add(new Option(`${v.label}절`, String(v.verseEnd)));
+  });
+
+  const sameChapter = repeatRange && repeatRange.book === state.currentBook &&
+    Number(repeatRange.chapter) === Number(state.currentChapter);
+  let start, end;
+  if (sameChapter) {
+    start = repeatRange.start;
+    end = repeatRange.end;
+    rangeModalCount = repeatRange.maxLoops;
+  } else {
+    const playingVerse = isTTSSpeaking && ttsSpeechItems[currentTTSIndex] ? ttsSpeechItems[currentTTSIndex].verse : null;
+    start = selectedVerseNum || playingVerse || verses[0].verse;
+    const startPos = Math.max(0, verses.findIndex(v => v.verseEnd >= start));
+    end = verses[Math.min(startPos + 8, verses.length - 1)].verseEnd;
+    rangeModalCount = 0;
+  }
+  selectClosestOption(startSel, start);
+  selectClosestOption(endSel, end, true);
+  if (parseInt(endSel.value, 10) < parseInt(startSel.value, 10)) selectClosestOption(endSel, parseInt(startSel.value, 10), true);
+
+  const unit = getChapterLabel(state.currentBook);
+  const chapterLabelEl = document.getElementById("rangeModalChapter");
+  if (chapterLabelEl) chapterLabelEl.textContent = `${state.currentBook} ${state.currentChapter}${unit}`;
+
+  updateRangeCountButtons();
+  updateRangePreview();
+  rangeModal.classList.add("active");
+}
+
+function getRangeModalSelection() {
+  const start = parseInt(document.getElementById("rangeStartSelect").value, 10);
+  const end = parseInt(document.getElementById("rangeEndSelect").value, 10);
+  return { start: Math.min(start, end), end: Math.max(start, end) };
+}
+
+function updateRangeCountButtons() {
+  document.querySelectorAll(".range-count-btn").forEach(btn => {
+    const active = parseInt(btn.dataset.count, 10) === rangeModalCount;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function updateRangePreview() {
+  const preview = document.getElementById("rangePreview");
+  if (!preview) return;
+  const { start, end } = getRangeModalSelection();
+  const verses = getRenderedVerseCards().filter(v => v.verseEnd >= start && v.verse <= end);
+  const countText = rangeModalCount > 0 ? `${rangeModalCount}회 반복` : "무한 반복";
+  const first = verses[0] && verses[0].card._verseCopy ? toPlainVerseText(verses[0].card._verseCopy.primary) : "";
+  const snippet = first.length > 42 ? first.slice(0, 42) + "…" : first;
+  preview.innerHTML = `<strong>${formatRangeLabel({ start, end })}</strong> · ${verses.length}개 절 · ${countText}` +
+    (snippet ? `<span class="range-preview-snippet">"${escapeHtml(snippet)}"</span>` : "");
+}
+
+function buildRangeCopyText(start, end) {
+  const verses = getRenderedVerseCards().filter(v => v.verseEnd >= start && v.verse <= end && v.card._verseCopy);
+  if (!verses.length) return "";
+  const first = verses[0].card._verseCopy;
+  const hasSecondary = verses.some(v => v.card._verseCopy.secondary);
+  const lines = verses.map(v => {
+    const d = v.card._verseCopy;
+    let line = `${d.label} ${toPlainVerseText(d.primary)}`;
+    if (hasSecondary && d.secondary) line += `\n   ${toPlainVerseText(d.secondary)}`;
+    return line;
+  });
+  const refVerse = start === end ? `${start}` : `${start}-${end}`;
+  const names = hasSecondary
+    ? `${getShortTranslationName(first.pCode)} / ${getShortTranslationName(state.secondaryTranslation)}`
+    : getShortTranslationName(first.pCode);
+  return `${lines.join("\n")}\n- ${state.currentBook} ${state.currentChapter}:${refVerse} (${names})`;
+}
+
+function startRangeRepeatFromModal() {
+  const { start, end } = getRangeModalSelection();
+  repeatRange = {
+    book: state.currentBook,
+    chapter: state.currentChapter,
+    start,
+    end,
+    maxLoops: rangeModalCount,
+    loopCount: 0
+  };
+  state.repeatMode = "RANGE";
+  saveSettings();
+  updateRepeatModeButton();
+  closeModal(rangeModal);
+  selectedVerseNum = null;
+  applySelectedVerseHighlight();
+  applyRepeatRangeHighlight();
+
+  if (isTTSSpeaking) {
+    const { startIdx } = getRepeatRangeIndices(repeatRange);
+    if (startIdx !== -1) {
+      currentTTSIndex = startIdx;
+      isTTSPaused = false;
+      updateTTSPlayButtons("❚❚ 일시정지");
+      startSilentAudio();
+      requestScreenWakeLock();
+      if (activeUtterance) {
+        activeUtterance.onend = null;
+        activeUtterance.onerror = null;
+      }
+      speakNextTTS(false);
+    }
+  } else {
+    startTTS(start);
+  }
+  updateRangeBadge();
+  showToast(`🎯 ${formatRangeLabel(repeatRange)} ${rangeModalCount > 0 ? rangeModalCount + "회" : "무한"} 반복 재생`);
+}
+
+function setupRangeRepeatControls() {
+  const btnOpen = document.getElementById("btnRangeRepeat");
+  if (btnOpen) btnOpen.addEventListener("click", openRangeModal);
+
+  const btnClose = document.getElementById("btnCloseRangeModal");
+  if (btnClose) btnClose.addEventListener("click", () => closeModal(rangeModal));
+
+  const startSel = document.getElementById("rangeStartSelect");
+  const endSel = document.getElementById("rangeEndSelect");
+  if (startSel && endSel) {
+    startSel.addEventListener("change", () => {
+      if (parseInt(endSel.value, 10) < parseInt(startSel.value, 10)) {
+        selectClosestOption(endSel, parseInt(startSel.value, 10), true);
+      }
+      updateRangePreview();
+    });
+    endSel.addEventListener("change", () => {
+      if (parseInt(endSel.value, 10) < parseInt(startSel.value, 10)) {
+        selectClosestOption(startSel, parseInt(endSel.value, 10));
+      }
+      updateRangePreview();
+    });
+  }
+
+  document.querySelectorAll(".range-count-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      rangeModalCount = parseInt(btn.dataset.count, 10) || 0;
+      updateRangeCountButtons();
+      updateRangePreview();
+    });
+  });
+
+  const btnPlay = document.getElementById("btnRangePlay");
+  if (btnPlay) btnPlay.addEventListener("click", startRangeRepeatFromModal);
+
+  const btnCopy = document.getElementById("btnRangeCopy");
+  if (btnCopy) {
+    btnCopy.addEventListener("click", () => {
+      const { start, end } = getRangeModalSelection();
+      const text = buildRangeCopyText(start, end);
+      if (!text) return;
+      copyTextToClipboard(text).then(ok => {
+        showToast(ok
+          ? `📋 ${state.currentBook} ${state.currentChapter}:${start === end ? start : start + "-" + end} 말씀이 복사되었습니다`
+          : "복사에 실패했습니다. 다시 시도해 주세요.");
+      });
+    });
+  }
+
+  const btnClear = document.getElementById("btnRangeClear");
+  if (btnClear) {
+    btnClear.addEventListener("click", () => {
+      clearRepeatRange();
+      closeModal(rangeModal);
+      showToast("구간 반복을 해제했습니다.");
+    });
+  }
+
+  const btnBadgeEdit = document.getElementById("btnRangeBadgeEdit");
+  if (btnBadgeEdit) btnBadgeEdit.addEventListener("click", openRangeModal);
+  const btnBadgeClear = document.getElementById("btnRangeBadgeClear");
+  if (btnBadgeClear) {
+    btnBadgeClear.addEventListener("click", () => {
+      clearRepeatRange();
+      showToast("구간 반복을 해제했습니다. (연속 낭독)");
+    });
   }
 }
 

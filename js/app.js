@@ -1610,4 +1610,13 @@ document.addEventListener('DOMContentLoaded', () => {
       triggerRealtimeSync({ silent: true });
     }
   });
+
+  // 앱이 켜져 있는 동안 3분마다 최신 일기/댓글/연속일수 자동 갱신 (화면이 보일 때만)
+  const AUTO_SYNC_INTERVAL_MS = 3 * 60 * 1000;
+  setInterval(() => {
+    if (document.visibilityState === 'visible' && Date.now() - lastAutoSyncTime >= AUTO_SYNC_INTERVAL_MS - 5000) {
+      lastAutoSyncTime = Date.now();
+      triggerRealtimeSync({ silent: true });
+    }
+  }, AUTO_SYNC_INTERVAL_MS);
 });
