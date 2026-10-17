@@ -1,4 +1,4 @@
-const CACHE_NAME = 'paniel-walk-v11';
+const CACHE_NAME = 'paniel-walk-v12';
 const ASSETS = [
   './',
   './index.html',

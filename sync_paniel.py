@@ -29,6 +29,9 @@ if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
 WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_JSON_PATH = os.path.join(WORKSPACE_DIR, "jwj_imported_diaries.json")
 JS_DATA_PATH = os.path.join(WORKSPACE_DIR, "js", "imported_data.js")
+# 일기 1편 단위(diaryCd) 원본 보관 - 같은 날 일기가 여러 편이어도 서로 덮어쓰지 않도록 (앱은 읽지 않음)
+PARTS_PATH = os.path.join(WORKSPACE_DIR, "jwj_diary_parts.json")
+SAME_DAY_DIVIDER = "\n\n━━━━━━━━━━ 같은 날 다음 일기 ━━━━━━━━━━\n\n"
 
 USER_ID = "20260204150115772172"
 USER_PW = "Euro3798@@"
@@ -242,6 +245,42 @@ def build_entry_from_raw(summary_item, det, raw_comments, default_groups=DEFAULT
     return date_str, entry, clean_text
 
 
+def merge_parts_by_date(parts):
+    """diaryCd별 일기를 날짜별 1개 항목으로 합침. 같은 날 여러 편이면 본문/댓글을 이어 붙이고 diaryCount를 기록."""
+    by_date = {}
+    for cd in sorted(parts):
+        e = parts[cd]
+        by_date.setdefault(e['date'], []).append(e)
+    merged = {}
+    for date_str, items in by_date.items():
+        items.sort(key=lambda e: (e.get('time') or '', e.get('jwj_diaryCd') or ''))
+        if len(items) == 1:
+            merged[date_str] = items[0]
+            continue
+        base = json.loads(json.dumps(max(items, key=lambda e: len((e.get('guide17') or {}).get('freeContent') or ''))))
+        texts, titles, tags, comments = [], [], [], []
+        for e in items:
+            t = (e.get('title') or '').strip()
+            body = ((e.get('guide17') or {}).get('freeContent') or '').strip()
+            titles.append(t)
+            texts.append((f"[{t}]\n" if t else "") + body)
+            for tg in e.get('tags') or []:
+                if tg not in tags:
+                    tags.append(tg)
+            comments.extend(e.get('comments') or [])
+        base['date'] = date_str
+        base['time'] = items[0].get('time') or base.get('time')
+        base['title'] = " · ".join(t for t in titles if t) or base.get('title')
+        base['tags'] = tags or base.get('tags')
+        base['comments'] = comments
+        base.setdefault('guide17', {})['freeContent'] = SAME_DAY_DIVIDER.join(texts)
+        base['jwj_diaryCd'] = items[0].get('jwj_diaryCd')
+        base['jwj_diaryCds'] = [e.get('jwj_diaryCd') for e in items]
+        base['diaryCount'] = len(items)
+        merged[date_str] = base
+    return merged
+
+
 def run_import(full_sync=False, push_git=True, skip_unchanged=False):
     t_start = time.time()
     print("=" * 65, flush=True)
@@ -268,16 +307,18 @@ def run_import(full_sync=False, push_git=True, skip_unchanged=False):
             prev_exported_at = _prev.get('exportedAt')
         except Exception:
             pass
-    if not full_sync and os.path.exists(OUTPUT_JSON_PATH):
+    parts = {}
+    if os.path.exists(PARTS_PATH) and not full_sync:
         try:
-            with open(OUTPUT_JSON_PATH, 'r', encoding='utf-8') as f:
-                prev_data = json.load(f)
-                existing_journals = prev_data.get('journals', {})
-                for j in existing_journals.values():
-                    if j.get('jwj_diaryCd'):
-                        existing_cds.add(j['jwj_diaryCd'])
+            with open(PARTS_PATH, 'r', encoding='utf-8') as f:
+                parts = json.load(f).get('parts', {})
         except Exception:
-            existing_journals = {}
+            parts = {}
+    parts_existed = bool(parts)
+    if not parts:
+        # 일기별 원본이 없으면(처음 실행) 전체를 다시 받아 같은 날 일기까지 모두 복구
+        full_sync = True
+    existing_cds = set(parts)
 
     opener, cookie_header = create_authenticated_opener(USER_ID, USER_PW)
     print(f"✓ 로그인 완료 ({time.time() - t_start:.2f}s)", flush=True)
@@ -314,32 +355,44 @@ def run_import(full_sync=False, push_git=True, skip_unchanged=False):
             com_res = []
         return summary_item, det_res, com_res
 
-    all_journals_dict = dict(existing_journals)
-
     with ThreadPoolExecutor(max_workers=10) as executor:
         results = list(executor.map(fetch_one_detail, summaries_to_fetch))
 
     for summary_item, det_res, com_res in reversed(results):
+        cd = summary_item['diaryCd']
+        if summary_item.get('tempSaveYn') == 'Y':
+            # 임시저장(작성 중) 일기는 제외
+            parts.pop(cd, None)
+            continue
         date_str, entry, clean_text = build_entry_from_raw(summary_item, det_res, com_res, DEFAULT_GROUPS)
-        prev = all_journals_dict.get(date_str)
+        prev = parts.get(cd)
         if prev:
             prev_text = (prev.get('guide17', {}).get('freeContent') or '').strip()
             if prev_text and not clean_text.strip():
+                # 본문을 못 받아온 경우 기존 본문 유지, 댓글만 갱신
                 if entry.get('comments'):
                     prev['comments'] = entry['comments']
                 continue
-        all_journals_dict[date_str] = entry
+        parts[cd] = entry
+
+    if full_sync:
+        # 전체 동기화 때는 삭제된 일기도 반영
+        listed = {s['diaryCd'] for s in summaries_to_fetch if s.get('tempSaveYn') != 'Y'}
+        parts = {cd: e for cd, e in parts.items() if cd in listed}
+
+    all_journals_dict = merge_parts_by_date(parts)
+    diary_total = len(parts)
 
     # 변경사항이 없고 마지막 동기화가 3시간 이내면 파일/커밋을 건너뜀 (3분마다 실행해도 불필요한 배포 방지)
     # 3시간마다는 exportedAt만 갱신해 앱의 연속일수 계산이 '동기화 지연'과 '실제 누락'을 구분하게 함
     new_snapshot = _journals_snapshot(all_journals_dict)
-    if skip_unchanged and new_snapshot == prev_journals_snapshot and prev_exported_at:
+    if skip_unchanged and parts_existed and new_snapshot == prev_journals_snapshot and prev_exported_at:
         try:
             age_sec = (datetime.now() - datetime.fromisoformat(prev_exported_at)).total_seconds()
         except Exception:
             age_sec = None
         if age_sec is not None and 0 <= age_sec < 3 * 3600:
-            print(f"✓ 변경 없음 - 총 {len(all_journals_dict)}편 (마지막 반영 {int(age_sec // 60)}분 전, 배포 생략)", flush=True)
+            print(f"✓ 변경 없음 - 총 {diary_total}편 (마지막 반영 {int(age_sec // 60)}분 전, 배포 생략)", flush=True)
             return None
 
     backup_payload = {
@@ -347,7 +400,7 @@ def run_import(full_sync=False, push_git=True, skip_unchanged=False):
         'exportedAt': datetime.now().isoformat(),
         'source': 'https://jwj.kr/diary',
         'account': USER_ID,
-        'totalCount': len(all_journals_dict),
+        'totalCount': diary_total,
         'settings': {
             'authorName': DEFAULT_AUTHOR,
             'customGroups': DEFAULT_GROUPS
@@ -362,15 +415,19 @@ def run_import(full_sync=False, push_git=True, skip_unchanged=False):
     with open(JS_DATA_PATH, 'w', encoding='utf-8') as f:
         f.write(js_content)
 
+    with open(PARTS_PATH, 'w', encoding='utf-8') as f:
+        json.dump({'parts': parts}, f, ensure_ascii=False)
+
     elapsed = time.time() - t_start
-    print(f"🎉 완료! 총 {len(all_journals_dict)}편 동기화됨 (소요시간: {elapsed:.2f}초)", flush=True)
+    print(f"🎉 완료! 총 {diary_total}편 동기화됨 ({len(all_journals_dict)}일, 소요시간: {elapsed:.2f}초)", flush=True)
 
     if push_git and os.path.exists(os.path.join(WORKSPACE_DIR, ".git")):
         try:
-            subprocess.run(['git', 'add', 'jwj_imported_diaries.json', 'js/imported_data.js'], cwd=WORKSPACE_DIR, check=True)
-            staged = subprocess.run(['git', 'diff', '--cached', '--quiet', '--', 'jwj_imported_diaries.json', 'js/imported_data.js'], cwd=WORKSPACE_DIR)
+            data_files = ['jwj_imported_diaries.json', 'js/imported_data.js', 'jwj_diary_parts.json']
+            subprocess.run(['git', 'add'] + data_files, cwd=WORKSPACE_DIR, check=True)
+            staged = subprocess.run(['git', 'diff', '--cached', '--quiet', '--'] + data_files, cwd=WORKSPACE_DIR)
             if staged.returncode != 0:
-                subprocess.run(['git', 'commit', '-m', f'chore: auto-sync {len(all_journals_dict)} diaries for Paniel ({DEFAULT_AUTHOR})'], cwd=WORKSPACE_DIR, check=True)
+                subprocess.run(['git', 'commit', '-m', f'chore: auto-sync {diary_total} diaries for Paniel ({DEFAULT_AUTHOR})'], cwd=WORKSPACE_DIR, check=True)
                 # 다른 PC의 자동 동기화와 충돌하지 않도록 푸시 전에 최신 내용과 합침
                 pull = subprocess.run(['git', 'pull', '--rebase', '--autostash', '-X', 'theirs', 'origin', 'main'], cwd=WORKSPACE_DIR)
                 if pull.returncode != 0:

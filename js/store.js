@@ -210,6 +210,11 @@ class JournalStore {
         if (item.faith) {
           this.journals[date].faith = item.faith;
         }
+        // 같은 날 여러 편 쓴 일기(본문이 합쳐진 항목)의 편수 정보 반영
+        if (item.diaryCount) {
+          this.journals[date].diaryCount = item.diaryCount;
+          this.journals[date].jwj_diaryCds = item.jwj_diaryCds;
+        }
       }
     }
     this.saveJournals();
@@ -231,6 +236,11 @@ class JournalStore {
       return true;
     }
     return false;
+  }
+
+  // 전체 일기 편수 (같은 날 여러 편 쓴 경우 diaryCount 반영)
+  countDiaries(journals = this.journals) {
+    return Object.values(journals || {}).reduce((n, j) => n + ((j && j.diaryCount) || 1), 0);
   }
 
   getAllJournalsList() {

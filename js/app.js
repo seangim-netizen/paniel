@@ -205,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateHeaderStreak() {
     const streak = store.calculateStreak();
-    const totalCount = Object.keys(store.journals || {}).length;
+    const totalCount = store.countDiaries();
     const streakEl = document.getElementById('header-streak-badge');
     if (streakEl) {
       streakEl.title = `현재 연속 일기 작성: ${streak}일 / 전체 동행 일기: ${totalCount}편`;
@@ -943,7 +943,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 동기화 배지 갱신
-    const importedCount = Object.keys(store.journals).length;
+    const importedCount = store.countDiaries();
     const totalComments = Object.values(store.journals).reduce((acc, j) => acc + (j.comments ? j.comments.length : 0), 0);
     const impEl = document.getElementById('jwj-imported-badge');
     const comEl = document.getElementById('jwj-comments-badge');
@@ -1034,7 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const countAllComments = (journalsObj) =>
       Object.values(journalsObj || {}).reduce((acc, j) => acc + ((j && j.comments) ? j.comments.length : 0), 0);
 
-    const beforeCount = Object.keys(store.journals || {}).length;
+    const beforeCount = store.countDiaries();
     const beforeComments = countAllComments(store.journals);
     const beforeStreak = store.calculateStreak();
 
@@ -1112,7 +1112,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {}
       }
 
-      const afterCount = Object.keys(store.journals || {}).length;
+      const afterCount = store.countDiaries();
       const afterComments = countAllComments(store.journals);
       const afterStreak = store.calculateStreak();
 
@@ -1120,7 +1120,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (liveResult.payload) {
           applyFreshPayload(liveResult.payload);
         }
-        const finalCount = Object.keys(store.journals || {}).length;
+        const finalCount = store.countDiaries();
         const finalComments = countAllComments(store.journals);
         const finalStreak = store.calculateStreak();
         if (!isSilent) {
@@ -1143,7 +1143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       console.warn('Sync warning:', err);
       if (!isSilent) {
-        showToast(`✓ 위드지저스 일기 ${Object.keys(store.journals).length}편이 동기화되었습니다.`);
+        showToast(`✓ 위드지저스 일기 ${store.countDiaries()}편이 동기화되었습니다.`);
       }
     } finally {
       isSyncingNow = false;
@@ -1180,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', () => {
       loadJournalForDate(currentDateStr);
       stats.renderAllStats();
       renderSettings();
-      const count = Object.keys(window.INITIAL_IMPORTED_DATA.journals).length;
+      const count = store.countDiaries(window.INITIAL_IMPORTED_DATA.journals);
       showToast(`✓ 최신 버전 및 일기 ${count}편 적용 완료! 화면을 새로고침합니다.`);
       setTimeout(() => window.location.reload(), 600);
     } else {
@@ -1427,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', () => {
       year: year
     });
 
-    const totalJournals = Object.keys(store.journals).length;
+    const totalJournals = store.countDiaries();
     let totalComments = 0;
     Object.values(store.journals).forEach(j => {
       totalComments += (j.comments || []).length;

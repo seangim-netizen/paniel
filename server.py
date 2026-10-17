@@ -65,7 +65,9 @@ def git_push_async(target_dir, commit_msg):
         import subprocess
         try:
             if os.path.exists(os.path.join(target_dir, '.git')):
-                subprocess.run(['git', 'add', 'jwj_imported_diaries.json', 'js/imported_data.js'], cwd=target_dir, check=True)
+                data_files = [f for f in ('jwj_imported_diaries.json', 'js/imported_data.js', 'jwj_diary_parts.json')
+                              if os.path.exists(os.path.join(target_dir, f))]
+                subprocess.run(['git', 'add'] + data_files, cwd=target_dir, check=True)
                 st = subprocess.run(['git', 'status', '--porcelain'], cwd=target_dir, capture_output=True, text=True)
                 if st.stdout.strip():
                     subprocess.run(['git', 'commit', '-m', commit_msg], cwd=target_dir, check=True)
