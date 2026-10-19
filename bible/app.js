@@ -250,8 +250,37 @@ function getChapterLabel(bookName) {
   return bookName === "시편" ? "편" : "장";
 }
 
+// 성경 DB 책 이름 표준화 (요한일서<->요한1서, 요한이서<->요한2서, 요한삼서<->요한3서, 오바댜<->오바디야 양방향 호환 보장)
+const BOOK_NAME_ALIASES = [
+  ["요한1서", "요한일서"],
+  ["요한2서", "요한이서"],
+  ["요한3서", "요한삼서"],
+  ["오바디야", "오바댜"]
+];
+
+function normalizeBibleDb(db) {
+  if (!db || typeof db !== "object") return;
+  BOOK_NAME_ALIASES.forEach(([canonical, alias]) => {
+    if (!db[canonical] && db[alias]) {
+      db[canonical] = db[alias];
+    } else if (db[canonical] && !db[alias]) {
+      db[alias] = db[canonical];
+    }
+  });
+}
+
+function normalizeAllLoadedBibleDbs() {
+  Object.keys(TRANSLATION_MAP).forEach(code => {
+    const varName = TRANSLATION_MAP[code].varName;
+    if (window[varName]) {
+      normalizeBibleDb(window[varName]);
+    }
+  });
+}
+
 // 앱 로드 시 초기화
 function init() {
+  normalizeAllLoadedBibleDbs();
   loadSettings();
   loadNotes();
   loadReadHistory();
@@ -772,6 +801,7 @@ function ensureTranslationLoaded(translationCode, callback) {
   
   if (t.isLoaded || window[t.varName]) {
     t.isLoaded = true;
+    normalizeBibleDb(window[t.varName]);
     callback(true);
     return;
   }
@@ -781,6 +811,7 @@ function ensureTranslationLoaded(translationCode, callback) {
   script.src = t.path;
   script.onload = () => {
     t.isLoaded = true;
+    normalizeBibleDb(window[t.varName]);
     callback(true);
   };
   script.onerror = () => {
