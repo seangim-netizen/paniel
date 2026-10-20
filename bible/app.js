@@ -1222,11 +1222,26 @@ function copyBackupTextAction() {
 
 /* ==========================================================================
    🔊 낭독 (TTS) 엔진 및 자연어 음성 설정 구현
+   - iOS 27 무음 모드 스피커 출력 및 화면 잠금(백그라운드) 연속 재생 지원 (<audio id="ttsMainAudio">)
+   - 구절 단위 MP3 Blob 사전 프리패칭(Prefetch)으로 끊김 없는 구절/장 자동 전환
+   - 일시정지 후 이어듣기 시 음절 잘림 현상 완벽 해결 (mainAudio.pause() / mainAudio.play())
+   - 오프라인 환경 시 Web Speech API 자동 폴백 지원
    ========================================================================== */
 
 let speechVoices = [];
+window.ttsCurrentPlayToken = 0;
+window.ttsUsingWebSpeechFallback = false;
+window.ttsLoadedVerseIndex = -1;
+window.ttsLoadedBook = "";
+window.ttsLoadedChapter = 0;
+window.ttsLoadedTranslation = "";
+window.ttsVerseRetryCount = 0;
+window.ttsAudioStallTimer = null;
+window.ttsSpeakTimer = null;
+window.ttsAudioBlobCache = window.ttsAudioBlobCache || {};
+window.ttsPrefetchingMap = window.ttsPrefetchingMap || {};
 
-// 시스템 음성 목록 비동기 캐싱 및 갱신
+// 시스템 음성 목록 비동기 캐싱 및 갱신 (오프라인 폴백용)
 function loadVoices() {
   if ('speechSynthesis' in window) {
     speechVoices = window.speechSynthesis.getVoices();
@@ -1238,6 +1253,37 @@ if ('speechSynthesis' in window) {
   loadVoices();
 }
 
+// iOS 17+ / iOS 27: 무음 스위치(벨소리 꺼짐) 상태에서도 미디어 스피커로 소리가 출력되도록 playback 세션 강제 지정
+function configurePlaybackAudioSession() {
+  try {
+    if ('audioSession' in navigator && navigator.audioSession) {
+      navigator.audioSession.type = 'playback';
+    }
+  } catch (e) {}
+}
+
+// 메인 HTML5 오디오 엘리먼트 반환 (단일 <audio> 인스턴스 재사용으로 iOS/Android 백그라운드 세션 유지)
+function getTtsMainAudioElement() {
+  let mainAudio = document.getElementById('ttsMainAudio');
+  if (!mainAudio) {
+    mainAudio = document.createElement('audio');
+    mainAudio.id = 'ttsMainAudio';
+    mainAudio.preload = 'auto';
+    mainAudio.setAttribute('playsinline', '');
+    mainAudio.setAttribute('webkit-playsinline', '');
+    mainAudio.style.display = 'none';
+    document.body.appendChild(mainAudio);
+  }
+  return mainAudio;
+}
+
+function clearTtsAudioStallTimer() {
+  if (window.ttsAudioStallTimer) {
+    clearTimeout(window.ttsAudioStallTimer);
+    window.ttsAudioStallTimer = null;
+  }
+}
+
 function updateTTSPlayButtons(text) {
   if (btnAudioTTSPlay) btnAudioTTSPlay.textContent = text;
   const btnBottom = document.getElementById("btnAudioTTSPlayBottom");
@@ -1246,142 +1292,23 @@ function updateTTSPlayButtons(text) {
   }
 }
 
-function togglePlayTTS() {
-  if (!('speechSynthesis' in window)) {
-    alert("이 브라우저는 음성 재생(TTS) 기능을 지원하지 않습니다.");
-    return;
-  }
-
-  if (isTTSSpeaking) {
-    if (isTTSPaused) {
-      isTTSPaused = false;
-      updateTTSPlayButtons("❚❚ 일시정지");
-      startSilentAudio();
-      requestScreenWakeLock();
-      if (window.speechSynthesis.paused && window.speechSynthesis.speaking) {
-        window.speechSynthesis.resume();
-      } else {
-        speakNextTTS(false);
-      }
-      updateMediaSession();
-    } else {
-      window.speechSynthesis.pause();
-      isTTSPaused = true;
-      updateTTSPlayButtons("▶ 재생");
-      stopSilentAudio();
-      releaseScreenWakeLock();
-      updateMediaSession();
-    }
-  } else {
-    // 구간 반복 중이면 구간 시작 절부터 처음 회차로, 아니면 선택된 구절(없으면 1절)부터
-    const activeRange = getActiveRepeatRange();
-    if (activeRange) {
-      activeRange.loopCount = 0;
-      startTTS(activeRange.start);
-    } else {
-      startTTS(selectedVerseNum);
-    }
-  }
-}
-
-function startTTS(startVerse) {
-  // 비동기로 로드되는 목소리 리스트가 유실되지 않도록 낭독 직전 리로딩 및 검사
-  if (!speechVoices || speechVoices.length === 0) {
-    loadVoices();
-  }
-
-  if (!speechVoices || speechVoices.length === 0) {
-    // 목소리 목록이 로컬 기기 환경에서 아직 다 안 읽힌 경우 250ms 대기 후 재생 시작 (요구사항)
-    showToast("음성 엔진을 준비하고 있습니다...");
-    setTimeout(() => {
-      loadVoices();
-      executeStartTTS(startVerse);
-    }, 250);
-  } else {
-    executeStartTTS(startVerse);
-  }
-}
-
-function executeStartTTS(startVerse) {
-  const cards = bibleViewerEl.querySelectorAll(".verse-card");
-  if (cards.length === 0) return;
-
-  ttsSpeechItems = [];
-  cards.forEach(card => {
-    const verseNum = card.getAttribute("data-verse");
-    
-    let textToSpeak = "";
-    const primaryTextEl = card.querySelector(".verse-translation-item.primary .verse-text-container");
-    if (primaryTextEl) {
-      textToSpeak = primaryTextEl.textContent;
-    } else {
-      const singleTextEl = card.querySelector(".verse-text-container");
-      textToSpeak = singleTextEl ? singleTextEl.textContent : "";
-    }
-    
-    // 대괄호 [], 꺾쇠 <>, 소괄호 () 및 내부 소제목/텍스트를 완전 제거하여 순수 성경 본문만 낭독
-    textToSpeak = textToSpeak.replace(/\[[^\]]*\]/g, "");
-    textToSpeak = textToSpeak.replace(/<[^>]*>/g, "");
-    textToSpeak = textToSpeak.replace(/\([^)]*\)/g, "");
-    // 본문 앞부분에 삽입된 절 번호 숫자("1", "2", 합쳐진 절 "18-19" 등) 제거
-    textToSpeak = textToSpeak.replace(/^\d+(?:-\d+)?\s*/, "").trim();
-    
-    if (textToSpeak) {
-      ttsSpeechItems.push({
-        element: card,
-        verse: parseInt(verseNum),
-        verseEnd: parseInt(card.getAttribute("data-verse-end")) || parseInt(verseNum),
-        text: textToSpeak // 절 번호("1절.")를 읽지 않고 순수 본문만 낭독 (요구사항 1)
-      });
-    }
-  });
-
-  if (ttsSpeechItems.length === 0) return;
-
-  isTTSSpeaking = true;
-  isTTSPaused = false;
-
-  // 시작 구절 지정 시 해당 인덱스부터(합쳐진 절 포함), 없으면 처음(0)부터
-  if (startVerse != null) {
-    let startIdx = ttsSpeechItems.findIndex(item => item.verse <= startVerse && startVerse <= item.verseEnd);
-    if (startIdx === -1) startIdx = ttsSpeechItems.findIndex(item => item.verse >= startVerse);
-    currentTTSIndex = startIdx !== -1 ? startIdx : 0;
-  } else {
-    currentTTSIndex = 0;
-  }
-
-  // 재생 시작 시 선택 하이라이트 해제
-  selectedVerseNum = null;
-  applySelectedVerseHighlight();
-  
-  // 재생 컨트롤 박스 표시
-  const ttsBox = document.getElementById("ttsControlBox");
-  if (ttsBox) ttsBox.classList.remove("hidden");
-  document.body.classList.add("tts-active");
-  if (btnAudioTTSRepeat) updateRepeatModeButton();
-  btnAudioTTSPlay.textContent = "❚❚ 일시정지";
-  updateRangeBadge();
-
-  initTTSHeartbeat();
-  startSilentAudio();
-  requestScreenWakeLock();
-  speakNextTTS(false);
-}
-
-// iOS 및 모바일 TTS 음성 엔진의 한국어 성경 고질적 오발음 사전 교정 엔진
-// 1) '숫양' -> iOS에서 연음 오류로 '수샹'으로 발음되는 현상 방지 -> [순냥] (표준 발음)
-// 2) '숫염소' -> iOS에서 '수셤소'로 발음되는 현상 방지 -> [순념소] (표준 발음)
-// 3) '갓' (Gad / 갓씨 등) -> iOS에서 영어 외래어('카스'/'가스'/Cass)로 오발음되는 현상 방지 -> [갇], [가시/가슨/가슬/가세/가세게]
+// iOS 및 모바일 TTS 음성 엔진의 한국어 성경 고질적 오발음 사전 교정 및 특수기호(○ 등) 제거 엔진
 function preprocessKoreanTTS(text) {
   if (!text) return "";
-  let s = text;
+  let s = String(text);
 
-  // 1. 숫양, 숫염소 발음 교정 (iOS Siri TTS 연음 오류 교정)
+  // 0. 절 구분 기호(○, ◯ 등) 및 괄호/각주 표기 완전 제거 ("빈 동그라미"로 읽는 현상 원천 차단)
+  s = s.replace(/\[[^\]]*\]/g, " ");
+  s = s.replace(/<[^>]*>/g, " ");
+  s = s.replace(/\([^)]*\)/g, " ");
+  s = s.replace(/[○◯●◎◇◆□■△▲▽▼☆★<>「」『』]/g, " ");
+  s = s.replace(/\b\d+\)/g, " ");
+
+  // 1. 숫양, 숫염소 발음 교정 (연음 오류 방지 -> 표준 발음)
   s = s.replace(/숫양/g, "순냥");
   s = s.replace(/숫염소/g, "순념소");
 
   // 2. '갓' (야곱의 7남 갓 지파 / 갓씨 / 선지자 갓 등) 영어 외래어 오발음 교정
-  // 모음 조사 연음 형태 우선 교정
   s = s.replace(/갓이/g, "가시");
   s = s.replace(/갓은/g, "가슨");
   s = s.replace(/갓을/g, "가슬");
@@ -1400,14 +1327,357 @@ function preprocessKoreanTTS(text) {
   s = s.replace(/갓(?=[과도으로며의자지선])/g, "갇");
   s = s.replace(/(^|[^가-힣])갓(?=[^가-힣]|$)/g, "$1갇");
 
-  return s;
+  return s.replace(/\s+/g, " ").trim();
+}
+
+function preprocessSpeechText(rawText) {
+  if (!rawText) return "";
+  const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(rawText);
+  if (isEnglish) {
+    return String(rawText)
+      .replace(/\[[^\]]*\]/g, " ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/[○◯●◎◇◆□■△▲▽▼☆★]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  return preprocessKoreanTTS(rawText);
+}
+
+function getTtsCacheKey(rawText) {
+  const processed = preprocessSpeechText(rawText);
+  const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(processed);
+  return (isEnglish ? "en|" : "ko|") + processed;
+}
+
+function getTtsApiUrl(rawText, useBackupEndpoint) {
+  const processed = preprocessSpeechText(rawText);
+  const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(processed);
+  const tl = isEnglish ? "en" : "ko";
+  const safeText = processed.substring(0, 200);
+  const baseUrl = useBackupEndpoint
+    ? "https://login-church-test.vercel.app/api/tts"
+    : "https://login-church.vercel.app/api/tts";
+  return `${baseUrl}?tl=${tl}&q=${encodeURIComponent(safeText)}`;
+}
+
+function prefetchRawSpeechText(rawText) {
+  const processed = preprocessSpeechText(rawText);
+  if (!processed) return Promise.resolve();
+  const cacheKey = getTtsCacheKey(processed);
+  if (window.ttsAudioBlobCache[cacheKey] || window.ttsPrefetchingMap[cacheKey]) {
+    return Promise.resolve();
+  }
+  window.ttsPrefetchingMap[cacheKey] = true;
+  return fetch(getTtsApiUrl(processed, false))
+    .then(res => {
+      if (!res.ok) throw new Error("TTS HTTP " + res.status);
+      return res.blob();
+    })
+    .then(blob => {
+      if (blob && blob.size > 64) {
+        window.ttsAudioBlobCache[cacheKey] = URL.createObjectURL(blob);
+      }
+      delete window.ttsPrefetchingMap[cacheKey];
+    })
+    .catch(() => {
+      delete window.ttsPrefetchingMap[cacheKey];
+    });
+}
+
+// 백그라운드 구절 전환 시 네트워크 지연이 없도록 다음 구절들의 MP3 Blob을 순차적으로 미리 캐싱
+function prefetchUpcomingVerses(startIdx, count) {
+  const indices = [];
+  const activeRange = getActiveRepeatRange();
+
+  if (state.repeatMode === "VERSE") {
+    if (currentTTSIndex >= 0 && currentTTSIndex < ttsSpeechItems.length) {
+      indices.push(currentTTSIndex);
+    }
+  } else if (activeRange) {
+    const { startIdx: rStart, endIdx: rEnd } = getRepeatRangeIndices(activeRange);
+    if (rStart !== -1 && rEnd !== -1) {
+      let idx = startIdx;
+      for (let i = 0; i < count; i++) {
+        if (idx > rEnd) idx = rStart;
+        if (idx >= 0 && idx < ttsSpeechItems.length) indices.push(idx);
+        idx++;
+      }
+    }
+  } else {
+    for (let i = 0; i < count; i++) {
+      const idx = startIdx + i;
+      if (idx >= 0 && idx < ttsSpeechItems.length) {
+        indices.push(idx);
+      } else if (state.repeatMode === "CHAPTER" && ttsSpeechItems.length > 0) {
+        indices.push(idx % ttsSpeechItems.length);
+      }
+    }
+  }
+
+  let chain = Promise.resolve();
+  indices.forEach(idx => {
+    const item = ttsSpeechItems[idx];
+    if (item && item.speakText) {
+      chain = chain.then(() => prefetchRawSpeechText(item.speakText));
+    }
+  });
+
+  // 연속 모드(NONE)에서 현재 장 마지막 부분(끝에서 2절 이내)을 읽고 있다면 다음 장 1~2절도 미리 프리패칭
+  if (state.repeatMode === "NONE" && startIdx >= ttsSpeechItems.length - 2) {
+    chain.then(() => prefetchNextChapterFirstVerses());
+  }
+}
+
+function prefetchNextChapterFirstVerses() {
+  try {
+    const currentBookIndex = BIBLE_METADATA.findIndex(b => b.name === state.currentBook);
+    if (currentBookIndex === -1) return;
+    const book = BIBLE_METADATA[currentBookIndex];
+    let nextBook = state.currentBook;
+    let nextChapter = state.currentChapter + 1;
+    if (nextChapter > book.chapters) {
+      if (currentBookIndex < BIBLE_METADATA.length - 1) {
+        nextBook = BIBLE_METADATA[currentBookIndex + 1].name;
+        nextChapter = 1;
+      } else {
+        return;
+      }
+    }
+    const pCode = state.primaryTranslation;
+    const pVarName = TRANSLATION_MAP[pCode] && TRANSLATION_MAP[pCode].varName;
+    const pDb = pVarName ? window[pVarName] : null;
+    if (!pDb || !pDb[nextBook] || !pDb[nextBook][String(nextChapter)]) return;
+    const verses = pDb[nextBook][String(nextChapter)];
+    const unit = getChapterLabel(nextBook);
+    let pChain = Promise.resolve();
+    for (let i = 0; i < Math.min(2, verses.length); i++) {
+      let vText = String(verses[i] || "").replace(MERGED_VERSE_PREFIX, "").trim();
+      if (!vText) continue;
+      const isEng = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(vText);
+      const speakStr = (i === 0)
+        ? (isEng ? `${nextBook} ${nextChapter}. ${vText}` : `${nextBook} ${nextChapter}${unit}. ${vText}`)
+        : vText;
+      pChain = pChain.then(() => prefetchRawSpeechText(speakStr));
+    }
+  } catch (e) {}
+}
+
+function togglePlayTTS() {
+  configurePlaybackAudioSession();
+
+  if (isTTSSpeaking) {
+    if (isTTSPaused) {
+      resumePausedTTS();
+    } else {
+      pauseActiveTTS();
+    }
+  } else {
+    const activeRange = getActiveRepeatRange();
+    if (activeRange) {
+      activeRange.loopCount = 0;
+      startTTS(activeRange.start);
+    } else {
+      startTTS(selectedVerseNum);
+    }
+  }
+}
+
+function pauseActiveTTS() {
+  isTTSPaused = true;
+  window.ttsCurrentPlayToken = (window.ttsCurrentPlayToken || 0) + 1;
+  clearTtsAudioStallTimer();
+  if (window.ttsSpeakTimer) {
+    clearTimeout(window.ttsSpeakTimer);
+    window.ttsSpeakTimer = null;
+  }
+
+  const mainAudio = document.getElementById('ttsMainAudio');
+  if (mainAudio) {
+    try {
+      mainAudio.onended = null;
+      mainAudio.onerror = null;
+      mainAudio.onplaying = null;
+      mainAudio.onwaiting = null;
+      mainAudio.onstalled = null;
+      mainAudio.pause();
+    } catch (e) {}
+  }
+
+  if ('speechSynthesis' in window) {
+    try {
+      if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+        window.speechSynthesis.pause();
+      }
+    } catch (e) {}
+  }
+
+  stopSilentAudio();
+  releaseScreenWakeLock();
+  updateTTSPlayButtons("▶ 이어듣기");
+  if ('mediaSession' in navigator) {
+    try { navigator.mediaSession.playbackState = "paused"; } catch (e) {}
+  }
+  showToast("낭독을 일시정지했습니다.");
+}
+
+function resumePausedTTS() {
+  configurePlaybackAudioSession();
+  isTTSPaused = false;
+  isTTSSpeaking = true;
+  updateTTSPlayButtons("❚❚ 일시정지");
+  requestScreenWakeLock();
+
+  const rate = TTS_SPEEDS[currentTTSSpeedIndex] || 1.0;
+  const mainAudio = getTtsMainAudioElement();
+
+  // 1) 메인 MP3 오디오에서 일시정지된 동일 구절이면 끊김 없이 즉시 이어서 재생 (음절 잘림 0%)
+  if (
+    !window.ttsUsingWebSpeechFallback &&
+    mainAudio &&
+    mainAudio.src &&
+    window.ttsLoadedVerseIndex === currentTTSIndex &&
+    window.ttsLoadedBook === state.currentBook &&
+    window.ttsLoadedChapter === state.currentChapter &&
+    window.ttsLoadedTranslation === state.primaryTranslation &&
+    !mainAudio.ended &&
+    (mainAudio.currentTime > 0 || mainAudio.readyState >= 2)
+  ) {
+    window.ttsCurrentPlayToken = (window.ttsCurrentPlayToken || 0) + 1;
+    const resumeToken = window.ttsCurrentPlayToken;
+    const resumeItem = ttsSpeechItems[currentTTSIndex];
+    const fallbackFn = attachMainAudioHandlers(mainAudio, resumeToken, resumeItem);
+
+    try {
+      mainAudio.defaultPlaybackRate = rate;
+      mainAudio.playbackRate = rate;
+    } catch (e) {}
+
+    updateMediaSession();
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.playbackState = "playing"; } catch (e) {}
+    }
+    prefetchUpcomingVerses(currentTTSIndex + 1, 4);
+    showToast(`낭독을 이어서 재생합니다 (${rate.toFixed(1)}x)`);
+
+    const resumePromise = mainAudio.play();
+    if (resumePromise && typeof resumePromise.catch === "function") {
+      resumePromise.catch(err => {
+        if (!isTTSSpeaking || isTTSPaused || resumeToken !== window.ttsCurrentPlayToken) return;
+        if (err && err.name === "AbortError") return;
+        fallbackFn();
+      });
+    }
+    return;
+  }
+
+  // 2) 오프라인 Web Speech 폴백 모드에서 일시정지된 경우
+  if (
+    window.ttsUsingWebSpeechFallback &&
+    'speechSynthesis' in window &&
+    window.speechSynthesis.paused &&
+    window.speechSynthesis.speaking &&
+    window.ttsLoadedVerseIndex === currentTTSIndex
+  ) {
+    startSilentAudio();
+    updateMediaSession();
+    try { window.speechSynthesis.resume(); } catch (e) {}
+    showToast(`낭독을 이어서 재생합니다 (${rate.toFixed(1)}x)`);
+    return;
+  }
+
+  // 3) 그 외의 경우 현재 구절 처음부터 안전하게 재시작
+  speakNextTTS(false);
+}
+
+function startTTS(startVerse) {
+  configurePlaybackAudioSession();
+  if (!speechVoices || speechVoices.length === 0) {
+    loadVoices();
+  }
+  executeStartTTS(startVerse);
+}
+
+function executeStartTTS(startVerse) {
+  const cards = bibleViewerEl.querySelectorAll(".verse-card");
+  if (cards.length === 0) return;
+
+  const book = state.currentBook;
+  const chapter = state.currentChapter;
+  const unit = getChapterLabel(book);
+
+  ttsSpeechItems = [];
+  cards.forEach(card => {
+    const verseNum = parseInt(card.getAttribute("data-verse"), 10);
+    const verseEndNum = parseInt(card.getAttribute("data-verse-end"), 10) || verseNum;
+
+    let textToSpeak = "";
+    const primaryTextEl = card.querySelector(".verse-translation-item.primary .verse-text-container");
+    if (primaryTextEl) {
+      textToSpeak = primaryTextEl.textContent;
+    } else {
+      const singleTextEl = card.querySelector(".verse-text-container");
+      textToSpeak = singleTextEl ? singleTextEl.textContent : "";
+    }
+
+    // 대괄호 [], 꺾쇠 <>, 소괄호 (), 절 구분 기호(○) 및 앞부분 절 번호 숫자 제거
+    textToSpeak = textToSpeak.replace(/\[[^\]]*\]/g, " ");
+    textToSpeak = textToSpeak.replace(/<[^>]*>/g, " ");
+    textToSpeak = textToSpeak.replace(/\([^)]*\)/g, " ");
+    textToSpeak = textToSpeak.replace(/[○◯●◎◇◆□■△▲▽▼☆★]/g, " ");
+    textToSpeak = textToSpeak.replace(/^\d+(?:-\d+)?\s*/, "").trim();
+
+    if (textToSpeak) {
+      const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(textToSpeak);
+      const speakText = (verseNum === 1)
+        ? (isEnglish ? `${book} ${chapter}. ${textToSpeak}` : `${book} ${chapter}${unit}. ${textToSpeak}`)
+        : textToSpeak;
+
+      ttsSpeechItems.push({
+        element: card,
+        verse: verseNum,
+        verseEnd: verseEndNum,
+        text: textToSpeak,
+        speakText: speakText
+      });
+    }
+  });
+
+  if (ttsSpeechItems.length === 0) return;
+
+  isTTSSpeaking = true;
+  isTTSPaused = false;
+  window.ttsVerseRetryCount = 0;
+
+  if (startVerse != null) {
+    let startIdx = ttsSpeechItems.findIndex(item => item.verse <= startVerse && startVerse <= item.verseEnd);
+    if (startIdx === -1) startIdx = ttsSpeechItems.findIndex(item => item.verse >= startVerse);
+    currentTTSIndex = startIdx !== -1 ? startIdx : 0;
+  } else {
+    currentTTSIndex = 0;
+  }
+
+  selectedVerseNum = null;
+  applySelectedVerseHighlight();
+
+  const ttsBox = document.getElementById("ttsControlBox");
+  if (ttsBox) ttsBox.classList.remove("hidden");
+  document.body.classList.add("tts-active");
+  if (btnAudioTTSRepeat) updateRepeatModeButton();
+  updateTTSPlayButtons("❚❚ 일시정지");
+  updateRangeBadge();
+
+  initTTSHeartbeat();
+  requestScreenWakeLock();
+  speakNextTTS(false);
 }
 
 function createConfiguredUtterance(item) {
-  const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(item.text);
-  const speechText = isEnglish ? item.text : preprocessKoreanTTS(item.text);
+  const rawText = (item && (item.speakText || item.text)) || "";
+  const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(rawText);
+  const speechText = preprocessSpeechText(rawText);
   const utterance = new SpeechSynthesisUtterance(speechText);
-  utterance.rate = TTS_SPEEDS[currentTTSSpeedIndex];
+  utterance.rate = TTS_SPEEDS[currentTTSSpeedIndex] || 1.0;
 
   if (isEnglish) {
     utterance.lang = "en-US";
@@ -1424,7 +1694,7 @@ function createConfiguredUtterance(item) {
   } else {
     utterance.lang = "ko-KR";
     if (speechVoices.length > 0) {
-      const preferredKoVoices = ["Google 한국어", "Microsoft Heami", "ko-KR", "ko"];
+      const preferredKoVoices = ["Google 한국어", "Microsoft Heami", "Yuna", "Sora", "ko-KR", "ko"];
       for (const pref of preferredKoVoices) {
         const selectedVoice = speechVoices.find(v => v.name.includes(pref) || v.lang.includes(pref));
         if (selectedVoice) {
@@ -1437,10 +1707,153 @@ function createConfiguredUtterance(item) {
   return utterance;
 }
 
-let isBackgroundQueueActive = false;
+function advanceToNextTTSVerse() {
+  if (!isTTSSpeaking || isTTSPaused) return;
+  window.ttsVerseRetryCount = 0;
+  if ( state.repeatMode !== "VERSE") {
+    currentTTSIndex++;
+  }
+  speakNextTTS(true);
+}
+
+function attemptAudioRetryOrFallback(playToken, item) {
+  if (!isTTSSpeaking || isTTSPaused || playToken !== window.ttsCurrentPlayToken) return;
+  clearTtsAudioStallTimer();
+
+  window.ttsVerseRetryCount = (window.ttsVerseRetryCount || 0) + 1;
+  if (window.ttsVerseRetryCount <= 2) {
+    const mainAudio = getTtsMainAudioElement();
+    const rate = TTS_SPEEDS[currentTTSSpeedIndex] || 1.0;
+    const rawText = (item && (item.speakText || item.text)) || "";
+    const useBackup = window.ttsVerseRetryCount === 2;
+    const retryUrl = getTtsApiUrl(rawText, useBackup) + "&retry=" + window.ttsVerseRetryCount + "_" + Date.now();
+
+    setTimeout(() => {
+      if (!isTTSSpeaking || isTTSPaused || playToken !== window.ttsCurrentPlayToken) return;
+      try {
+        attachMainAudioHandlers(mainAudio, playToken, item);
+        mainAudio.src = retryUrl;
+        mainAudio.defaultPlaybackRate = rate;
+        mainAudio.playbackRate = rate;
+        const p = mainAudio.play();
+        if (p && typeof p.catch === "function") {
+          p.catch(err => {
+            if (!isTTSSpeaking || isTTSPaused || playToken !== window.ttsCurrentPlayToken) return;
+            if (err && err.name === "AbortError") return;
+            attemptAudioRetryOrFallback(playToken, item);
+          });
+        }
+      } catch (e) {
+        speakWithWebSpeechFallback(playToken, item);
+      }
+    }, 300);
+    return;
+  }
+
+  window.ttsVerseRetryCount = 0;
+  speakWithWebSpeechFallback(playToken, item);
+}
+
+function attachMainAudioHandlers(mainAudio, playToken, item) {
+  let hasEndedOrErrored = false;
+
+  const armStallWatchdog = (timeoutMs) => {
+    clearTtsAudioStallTimer();
+    window.ttsAudioStallTimer = setTimeout(() => {
+      if (!isTTSSpeaking || isTTSPaused || hasEndedOrErrored || playToken !== window.ttsCurrentPlayToken) return;
+      if (mainAudio.paused || mainAudio.readyState < 2) {
+        hasEndedOrErrored = true;
+        attemptAudioRetryOrFallback(playToken, item);
+      }
+    }, timeoutMs || 7500);
+  };
+
+  const triggerRetryOrFallback = () => {
+    if (!isTTSSpeaking || isTTSPaused || hasEndedOrErrored || playToken !== window.ttsCurrentPlayToken) return;
+    hasEndedOrErrored = true;
+    clearTtsAudioStallTimer();
+    attemptAudioRetryOrFallback(playToken, item);
+  };
+
+  armStallWatchdog(7500);
+
+  mainAudio.onplaying = () => {
+    if (playToken !== window.ttsCurrentPlayToken) return;
+    window.ttsVerseRetryCount = 0;
+    clearTtsAudioStallTimer();
+  };
+
+  mainAudio.onwaiting = () => {
+    if (playToken !== window.ttsCurrentPlayToken) return;
+    armStallWatchdog(7500);
+  };
+
+  mainAudio.onstalled = () => {
+    if (playToken !== window.ttsCurrentPlayToken) return;
+    armStallWatchdog(6000);
+  };
+
+  mainAudio.onended = () => {
+    if (!isTTSSpeaking || isTTSPaused || hasEndedOrErrored || playToken !== window.ttsCurrentPlayToken) return;
+    hasEndedOrErrored = true;
+    clearTtsAudioStallTimer();
+    advanceToNextTTSVerse();
+  };
+
+  mainAudio.onerror = () => {
+    triggerRetryOrFallback();
+  };
+
+  return triggerRetryOrFallback;
+}
+
+function speakWithWebSpeechFallback(playToken, item) {
+  if (!isTTSSpeaking || isTTSPaused || playToken !== window.ttsCurrentPlayToken) return;
+  if (!('speechSynthesis' in window)) {
+    stopTTS();
+    showToast("음성 재생을 사용할 수 없습니다.");
+    return;
+  }
+
+  window.ttsUsingWebSpeechFallback = true;
+  startSilentAudio();
+
+  try {
+    window.speechSynthesis.cancel();
+  } catch (e) {}
+
+  const utterance = createConfiguredUtterance(item);
+  activeUtterance = utterance;
+  let hasStepEnded = false;
+
+  utterance.onend = () => {
+    if (!isTTSSpeaking || isTTSPaused || hasStepEnded || playToken !== window.ttsCurrentPlayToken || utterance !== activeUtterance) return;
+    hasStepEnded = true;
+    advanceToNextTTSVerse();
+  };
+
+  utterance.onerror = (e) => {
+    if (!isTTSSpeaking || isTTSPaused || hasStepEnded || playToken !== window.ttsCurrentPlayToken || utterance !== activeUtterance) return;
+    if (e && (e.error === "interrupted" || e.error === "canceled")) return;
+    hasStepEnded = true;
+    advanceToNextTTSVerse();
+  };
+
+  try {
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
+  } catch (e) {}
+  window.speechSynthesis.speak(utterance);
+}
 
 function speakNextTTS(fromAutoEnd = false) {
-  if (!isTTSSpeaking) return;
+  if (!isTTSSpeaking || isTTSPaused) return;
+
+  if (window.ttsSpeakTimer) {
+    clearTimeout(window.ttsSpeakTimer);
+    window.ttsSpeakTimer = null;
+  }
 
   // 🎯 구간 반복: 끝 절을 지나면 시작 절로 되돌아가기 (횟수 제한 시 완료 후 정지)
   const activeRange = getActiveRepeatRange();
@@ -1459,13 +1872,12 @@ function speakNextTTS(fromAutoEnd = false) {
     }
   }
 
+  // 장 끝에 도달했을 때 처리
   if (currentTTSIndex >= ttsSpeechItems.length) {
     if (state.repeatMode === "CHAPTER") {
       showToast("현재 장을 반복 낭독합니다.");
       currentTTSIndex = 0;
-      setTimeout(() => {
-        if (isTTSSpeaking) speakNextTTS(true);
-      }, 300);
+      speakNextTTS(true);
       return;
     }
 
@@ -1494,14 +1906,22 @@ function speakNextTTS(fromAutoEnd = false) {
     showToast("다음 장을 이어서 낭독합니다.");
     navigateChapter(1);
 
-    // 다음 장 로드 후 자동 연속 재생 시작
-    setTimeout(() => {
-      if (isTTSSpeaking) {
-        startTTS();
+    // 백그라운드/잠금화면에서도 오디오 세션이 끊기지 않도록 즉시 다음 장 1절부터 이어서 재생
+    const tryStartNextChapter = (attempt = 0) => {
+      if (!isTTSSpeaking) return;
+      const cards = bibleViewerEl.querySelectorAll(".verse-card");
+      if (cards.length > 0) {
+        executeStartTTS(1);
+      } else if (attempt < 10) {
+        setTimeout(() => tryStartNextChapter(attempt + 1), 100);
       }
-    }, 500);
+    };
+    tryStartNextChapter(0);
     return;
   }
+
+  window.ttsCurrentPlayToken = (window.ttsCurrentPlayToken || 0) + 1;
+  const myPlayToken = window.ttsCurrentPlayToken;
 
   bibleViewerEl.querySelectorAll(".is-reading-speaking").forEach(el => {
     el.classList.remove("is-reading-speaking");
@@ -1516,114 +1936,69 @@ function speakNextTTS(fromAutoEnd = false) {
   }
 
   updateMediaSession();
+  if ('mediaSession' in navigator) {
+    try { navigator.mediaSession.playbackState = "playing"; } catch (e) {}
+  }
 
-  // 이전 재생 건의 비동기 콜백 강제 차단
+  // 이전 Web Speech 콜백 차단
   if (activeUtterance) {
     activeUtterance.onend = null;
     activeUtterance.onerror = null;
+    activeUtterance = null;
+  }
+  if (!fromAutoEnd && 'speechSynthesis' in window) {
+    try { window.speechSynthesis.cancel(); } catch (e) {}
   }
 
-  // 중요: 수동 조작(처음 시작, 이전/다음, 배속 변경 등)일 때만 cancel() 호출!
-  // 자동 구절 전환(onend) 시 cancel()을 호출하면 모바일 백그라운드에서 오디오 포커스가 끊김
-  if (!fromAutoEnd) {
-    isBackgroundQueueActive = false;
-    window.speechSynthesis.cancel();
+  // 다음 구절들을 미리 메모리에 프리패칭 (백그라운드 연속 재생 보장)
+  prefetchUpcomingVerses(currentTTSIndex + 1, 3);
+
+  const mainAudio = getTtsMainAudioElement();
+  window.ttsUsingWebSpeechFallback = false;
+  window.ttsLoadedVerseIndex = currentTTSIndex;
+  window.ttsLoadedBook = state.currentBook;
+  window.ttsLoadedChapter = state.currentChapter;
+  window.ttsLoadedTranslation = state.primaryTranslation;
+
+  // MP3 스트리밍 재생 중에는 무음 오디오 루프(bgSilentAudio)를 꺼서 iOS 오디오 세션 충돌 방지
+  const bgAudio = document.getElementById('bgSilentAudio');
+  if (bgAudio && !bgAudio.paused) {
+    try { bgAudio.pause(); } catch (e) {}
   }
 
-  const utterance = createConfiguredUtterance(item);
-  activeUtterance = utterance;
+  const rawSpeechText = (item && (item.speakText || item.text)) || "";
+  const cacheKey = getTtsCacheKey(rawSpeechText);
+  const audioSrc = window.ttsAudioBlobCache[cacheKey] || getTtsApiUrl(rawSpeechText, false);
+  const rate = TTS_SPEEDS[currentTTSSpeedIndex] || 1.0;
+  const fallbackFn = attachMainAudioHandlers(mainAudio, myPlayToken, item);
 
-  let callbackTriggered = false;
+  try {
+    mainAudio.muted = false;
+    mainAudio.volume = 1.0;
+    if ('preservesPitch' in mainAudio) mainAudio.preservesPitch = true;
+    if ('webkitPreservesPitch' in mainAudio) mainAudio.webkitPreservesPitch = true;
+    mainAudio.src = audioSrc;
+    mainAudio.defaultPlaybackRate = rate;
+    mainAudio.playbackRate = rate;
 
-  utterance.onend = () => {
-    if (callbackTriggered || isBackgroundQueueActive) return;
-    callbackTriggered = true;
-
-    if (!isTTSPaused && isTTSSpeaking) {
-      if (state.repeatMode !== "VERSE") {
-        currentTTSIndex++;
-      }
-      speakNextTTS(true);
+    const playPromise = mainAudio.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(err => {
+        if (!isTTSSpeaking || isTTSPaused || myPlayToken !== window.ttsCurrentPlayToken) return;
+        if (err && err.name === "AbortError") return;
+        fallbackFn();
+      });
     }
-  };
-
-  utterance.onerror = (e) => {
-    if (e.error === "interrupted" || e.error === "canceled") return;
-    if (callbackTriggered || isBackgroundQueueActive) return;
-    callbackTriggered = true;
-
-    if (isTTSSpeaking && !isTTSPaused) {
-      if (state.repeatMode !== "VERSE") {
-        currentTTSIndex++;
-      }
-      speakNextTTS(true);
-    }
-  };
-
-  window.speechSynthesis.speak(utterance);
-
-  // 만약 현재 화면이 꺼져 있거나 백그라운드 상태라면 남은 절들을 미리 큐에 등록
-  if (document.hidden && !isBackgroundQueueActive && state.repeatMode !== "VERSE") {
-    enqueueRemainingVersesForBackground();
+  } catch (e) {
+    fallbackFn();
   }
 }
 
-// 모바일 화면 꺼짐(백그라운드) 시 JS 타이머가 멈춰도 OS TTS 엔진이 끝까지 읽도록 남은 구절 일괄 큐잉
 function enqueueRemainingVersesForBackground() {
-  if (!isTTSSpeaking || isTTSPaused || isBackgroundQueueActive) return;
-
-  // 미리 큐에 넣을 순서 구성: { idx, loop } (loop = 구간 반복 회차 증가분)
-  const sequence = [];
-  const activeRange = getActiveRepeatRange();
-  if (activeRange) {
-    const { startIdx, endIdx } = getRepeatRangeIndices(activeRange);
-    if (startIdx === -1 || endIdx === -1) return;
-    for (let idx = currentTTSIndex + 1; idx <= endIdx; idx++) sequence.push({ idx, loop: 0 });
-    const loopsLeft = activeRange.maxLoops > 0
-      ? activeRange.maxLoops - activeRange.loopCount - 1
-      : BG_RANGE_PRELOAD_LOOPS;
-    for (let l = 1; l <= Math.min(loopsLeft, BG_RANGE_PRELOAD_LOOPS); l++) {
-      for (let idx = startIdx; idx <= endIdx; idx++) sequence.push({ idx, loop: l });
-    }
-  } else {
-    for (let idx = currentTTSIndex + 1; idx < ttsSpeechItems.length; idx++) sequence.push({ idx, loop: 0 });
+  // MP3 스트리밍 모드에서는 prefetchUpcomingVerses가 구절을 사전 로드하여 onended로 연속 재생함
+  if (isTTSSpeaking && !isTTSPaused && !window.ttsUsingWebSpeechFallback) {
+    prefetchUpcomingVerses(currentTTSIndex + 1, 4);
   }
-
-  // 남은 구절이 없으면 큐잉하지 않음 (현재 구절의 onend가 다음 동작을 이어서 처리)
-  if (sequence.length === 0) return;
-
-  isBackgroundQueueActive = true;
-  const baseLoop = activeRange ? activeRange.loopCount : 0;
-
-  sequence.forEach((entry, seqPos) => {
-    const nextItem = ttsSpeechItems[entry.idx];
-    const bgUtterance = createConfiguredUtterance(nextItem);
-    const isLast = seqPos === sequence.length - 1;
-
-    bgUtterance.onstart = () => {
-      if (!isTTSSpeaking) return;
-      currentTTSIndex = entry.idx;
-      if (activeRange && repeatRange === activeRange) {
-        activeRange.loopCount = baseLoop + entry.loop;
-        updateRangeBadge();
-      }
-      bibleViewerEl.querySelectorAll(".is-reading-speaking").forEach(el => el.classList.remove("is-reading-speaking"));
-      if (nextItem.element) nextItem.element.classList.add("is-reading-speaking");
-      updateMediaSession();
-    };
-
-    bgUtterance.onend = () => {
-      if (!isTTSSpeaking || isTTSPaused) return;
-      if (isLast) {
-        isBackgroundQueueActive = false;
-        // 구간 반복: 끝 절 다음 인덱스로 → speakNextTTS가 시작 절로 되돌림 / 일반: 장 끝 처리
-        currentTTSIndex = activeRange ? entry.idx + 1 : ttsSpeechItems.length;
-        speakNextTTS(true);
-      }
-    };
-
-    window.speechSynthesis.speak(bgUtterance);
-  });
 }
 
 function jumpToTTSVerse(verseNum) {
@@ -1632,36 +2007,55 @@ function jumpToTTSVerse(verseNum) {
   if (targetIdx !== -1) {
     currentTTSIndex = targetIdx;
     isTTSPaused = false;
-    btnAudioTTSPlay.textContent = "❚❚ 일시정지";
-
-    if (activeUtterance) {
-      activeUtterance.onend = null;
-      activeUtterance.onerror = null;
-    }
-
+    window.ttsVerseRetryCount = 0;
+    updateTTSPlayButtons("❚❚ 일시정지");
     speakNextTTS(false);
   }
 }
 
-// 낭독 정지
+// 낭독 완전 정지
 function stopTTS() {
   isTTSSpeaking = false;
   isTTSPaused = false;
-  isBackgroundQueueActive = false;
+  window.ttsCurrentPlayToken = (window.ttsCurrentPlayToken || 0) + 1;
+  window.ttsLoadedVerseIndex = -1;
+  window.ttsVerseRetryCount = 0;
+
+  clearTtsAudioStallTimer();
+  if (window.ttsSpeakTimer) {
+    clearTimeout(window.ttsSpeakTimer);
+    window.ttsSpeakTimer = null;
+  }
+
+  const mainAudio = document.getElementById('ttsMainAudio');
+  if (mainAudio) {
+    try {
+      mainAudio.onended = null;
+      mainAudio.onerror = null;
+      mainAudio.onplaying = null;
+      mainAudio.onwaiting = null;
+      mainAudio.onstalled = null;
+      mainAudio.pause();
+      mainAudio.removeAttribute('src');
+      mainAudio.load();
+    } catch (e) {}
+  }
 
   stopSilentAudio();
   releaseScreenWakeLock();
   if ('mediaSession' in navigator) {
-    navigator.mediaSession.playbackState = "none";
+    try { navigator.mediaSession.playbackState = "none"; } catch (e) {}
   }
 
   if (activeUtterance) {
     activeUtterance.onend = null;
     activeUtterance.onerror = null;
+    activeUtterance = null;
   }
 
-  window.speechSynthesis.cancel();
-  activeUtterance = null;
+  if ('speechSynthesis' in window) {
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+  }
 
   if (window.ttsHeartbeatInterval) {
     clearInterval(window.ttsHeartbeatInterval);
@@ -1671,7 +2065,7 @@ function stopTTS() {
   const ttsBox2 = document.getElementById("ttsControlBox");
   if (ttsBox2) ttsBox2.classList.add("hidden");
   document.body.classList.remove("tts-active");
-  btnAudioTTSPlay.textContent = "▶ 재생";
+  updateTTSPlayButtons("▶ 재생");
 
   bibleViewerEl.querySelectorAll(".is-reading-speaking").forEach(el => {
     el.classList.remove("is-reading-speaking");
@@ -1682,6 +2076,9 @@ function stopTTS() {
 function playPrevTTS() {
   if (currentTTSIndex > 0) {
     currentTTSIndex--;
+    isTTSPaused = false;
+    window.ttsVerseRetryCount = 0;
+    updateTTSPlayButtons("❚❚ 일시정지");
     speakNextTTS(false);
   }
 }
@@ -1689,6 +2086,9 @@ function playPrevTTS() {
 function playNextTTS() {
   if (currentTTSIndex < ttsSpeechItems.length - 1) {
     currentTTSIndex++;
+    isTTSPaused = false;
+    window.ttsVerseRetryCount = 0;
+    updateTTSPlayButtons("❚❚ 일시정지");
     speakNextTTS(false);
   }
 }
@@ -1699,6 +2099,17 @@ function toggleTTSSpeed() {
   btnAudioTTSSpeed.textContent = `${speed.toFixed(1)}x`;
 
   if (isTTSSpeaking && !isTTSPaused) {
+    if (!window.ttsUsingWebSpeechFallback) {
+      const mainAudio = document.getElementById('ttsMainAudio');
+      if (mainAudio && !mainAudio.paused) {
+        try {
+          mainAudio.defaultPlaybackRate = speed;
+          mainAudio.playbackRate = speed;
+          showToast(`낭독 배속: ${speed.toFixed(1)}x`);
+          return;
+        } catch (e) {}
+      }
+    }
     speakNextTTS(false);
   }
 }
@@ -1707,10 +2118,14 @@ function initTTSHeartbeat() {
   if (window.ttsHeartbeatInterval) clearInterval(window.ttsHeartbeatInterval);
   window.ttsHeartbeatInterval = setInterval(() => {
     if (isTTSSpeaking && !isTTSPaused) {
-      if (window.speechSynthesis.paused) {
-        try { window.speechSynthesis.resume(); } catch (e) {}
+      if (window.ttsUsingWebSpeechFallback) {
+        if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+          try { window.speechSynthesis.resume(); } catch (e) {}
+        }
+        startSilentAudio();
+      } else {
+        prefetchUpcomingVerses(currentTTSIndex + 1, 3);
       }
-      startSilentAudio();
     }
   }, 5000);
 }
@@ -2535,40 +2950,44 @@ function setupMediaSessionHandlers() {
   }
 }
 
-// 백그라운드 전환 시: 남은 절 일괄 큐잉(Pre-Queue) + 무음 오디오 유지
-// 화면 복귀 시: WakeLock 재획득 + 끊긴 경우 현재 절부터 자동 복구
+// 백그라운드 전환 시: MP3 스트리밍 구절 사전 프리패칭 유지 (오프라인 폴백 시에만 무음 오디오 유지)
+// 화면 복귀 시: WakeLock 재획득 +当前 재생 중인 구절로 스크롤 동기화
 document.addEventListener('visibilitychange', function() {
   if (document.hidden) {
     if (isTTSSpeaking && !isTTSPaused) {
-      startSilentAudio();
-      // 모바일 브라우저가 백그라운드에서 JS 타이머를 멈추더라도 OS TTS 엔진이 끝까지 읽도록 남은 절들을 큐에 등록
-      enqueueRemainingVersesForBackground();
-      if ('speechSynthesis' in window && window.speechSynthesis.paused) {
-        try { window.speechSynthesis.resume(); } catch(e) {}
+      if (window.ttsUsingWebSpeechFallback) {
+        startSilentAudio();
+        if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+          try { window.speechSynthesis.resume(); } catch (e) {}
+        }
+      } else {
+        prefetchUpcomingVerses(currentTTSIndex + 1, 4);
       }
     }
   } else {
-    // 화면이 다시 켜졌을 때
     if (isTTSSpeaking && !isTTSPaused) {
       requestScreenWakeLock();
-      startSilentAudio();
-      setTimeout(function() {
-        if (!window.speechSynthesis.speaking && isTTSSpeaking && !isTTSPaused) {
-          // 만약 OS가 백그라운드 세션을 강제 종료했다면 현재 구절부터 즉시 이어서 재생
-          const currentVerse = ttsSpeechItems[currentTTSIndex]
-            ? ttsSpeechItems[currentTTSIndex].verse : null;
-          isTTSSpeaking = false;
-          startTTS(currentVerse);
-        } else if (window.speechSynthesis.paused) {
-          try { window.speechSynthesis.resume(); } catch(e) {}
+      const item = ttsSpeechItems[currentTTSIndex];
+      if (item && item.element) {
+        try { item.element.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+      }
+      if (window.ttsUsingWebSpeechFallback) {
+        startSilentAudio();
+        if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+          try { window.speechSynthesis.resume(); } catch (e) {}
         }
-      }, 300);
+      } else {
+        const mainAudio = document.getElementById('ttsMainAudio');
+        if (mainAudio && mainAudio.paused && mainAudio.src && !mainAudio.ended) {
+          mainAudio.play().catch(() => {});
+        }
+      }
     }
   }
 });
 
 window.addEventListener("DOMContentLoaded", () => {
-  ensureSilentAudioElement();
+  getTtsMainAudioElement();
 });
 
 // 반복 모드 토글: 연속 → 장반복 → 절반복 → 구간반복 → 연속
@@ -2979,8 +3398,8 @@ function startRangeRepeatFromModal() {
     if (startIdx !== -1) {
       currentTTSIndex = startIdx;
       isTTSPaused = false;
+      window.ttsVerseRetryCount = 0;
       updateTTSPlayButtons("❚❚ 일시정지");
-      startSilentAudio();
       requestScreenWakeLock();
       if (activeUtterance) {
         activeUtterance.onend = null;

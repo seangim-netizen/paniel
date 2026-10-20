@@ -2,9 +2,9 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>📖 김시웅 권사 성경통독일기장</title>
-  <link rel="stylesheet" href="style.css?v=20261017_range">
+  <link rel="stylesheet" href="style.css?v=20261021_tts">
   <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -322,10 +322,13 @@
   <!-- 토스트 알림 -->
   <div id="toast" class="toast hidden"></div>
 
+  <!-- iOS 27 무음 모드 스피커 출력 및 화면 잠금 연속 재생용 메인 오디오 엘리먼트 -->
+  <audio id="ttsMainAudio" playsinline webkit-playsinline preload="auto" style="display:none;"></audio>
+
   <!-- 성경 DB 스크립트 로드 (66권 통합 DB) -->
-  <script src="./bible_db_66.js?v=20261019_66full"></script>
+  <script src="./bible_db_66.js?v=20261021_tts"></script>
   
   <!-- 애플리케이션 로직 -->
-  <script src="app.js?v=20261019_66full"></script>
+  <script src="app.js?v=20261021_tts"></script>
 </body>
 </html>

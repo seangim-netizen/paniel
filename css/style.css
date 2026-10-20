@@ -78,9 +78,12 @@ button:active {
   font-weight: 600;
 }
 
-/* Tab Active Indicator & iOS Segmented Pill Styles */
+/* Tab Active Indicator & iOS Segmented Pill Styles (iOS 27 상단 블러 현상 방지) */
 header {
   padding-top: env(safe-area-inset-top, 0px);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  filter: none !important;
 }
 
 .nav-tab {

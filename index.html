@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>로그인처치 예수동행일기 - Paniel</title>
   <link rel="manifest" href="./manifest.json">
   <link rel="icon" type="image/png" href="./assets/apple-touch-icon.png">
@@ -17,12 +17,12 @@
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/style.css?v=20261021_tts">
 </head>
 <body class="bg-[#f8faf8] min-h-screen text-[#232c25] pb-24 sm:pb-12">
 
   <!-- 상단 네비게이션 헤더 -->
-  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#e5ece5]">
+  <header class="sticky top-0 z-40 bg-white border-b border-[#e5ece5]">
     <div class="max-w-4xl mx-auto px-3 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2">
       <!-- 좌측: 로그인처치 로고 -->
       <div class="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -598,7 +598,7 @@
 
     <!-- ==================== TAB 5: 전체성경 66권 (Bible) ==================== -->
     <section id="view-bible" class="view-section hidden w-full -mx-3 sm:-mx-4 -mt-4 sm:-mt-6 pb-0" style="height: calc(100dvh - 102px);">
-      <iframe id="bible-iframe" src="./bible/index.html?v=20261019_66full" allow="autoplay; screen-wake-lock; clipboard-write" class="w-full h-full border-0" title="66권 전체성경 앱"></iframe>
+      <iframe id="bible-iframe" src="./bible/index.html?v=20261021_tts" allow="autoplay; screen-wake-lock; clipboard-write" class="w-full h-full border-0" title="66권 전체성경 앱"></iframe>
     </section>
 
     <!-- ==================== TAB 6: 설정 및 동기화 (Settings) ==================== -->
@@ -741,26 +741,16 @@
 
 
   <!-- 스크립트 연결 -->
-  <script src="./js/imported_data.js?v=20261017_2"></script>
-  <script src="./js/store.js?v=20261017_2"></script>
-  <script src="./js/charts.js?v=20261017_2"></script>
-  <script src="./js/app.js?v=20261017_2"></script>
+  <script src="./js/imported_data.js?v=20261021_tts"></script>
+  <script src="./js/store.js?v=20261021_tts"></script>
+  <script src="./js/charts.js?v=20261021_tts"></script>
+  <script src="./js/app.js?v=20261021_tts"></script>
   <script>
-    // PWA Service Worker 등록 및 모바일 웹앱 즉시 자동 업데이트
+    // PWA Service Worker 등록 (성경 백그라운드 낭독 중 강제 새로고침으로 인한 끊김 방지)
     if ('serviceWorker' in navigator) {
-      let refreshing = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!refreshing) {
-          refreshing = true;
-          window.location.reload();
-        }
-      });
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
           reg.update();
-          document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') reg.update();
-          });
         }).catch(err => console.log('SW register fail:', err));
       });
     }

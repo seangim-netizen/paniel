@@ -1,12 +1,12 @@
-const CACHE_NAME = 'bible-app-cache-v8-66full';
+const CACHE_NAME = 'bible-app-cache-v9-20261021';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './style.css',
-  './app.js?v=20261019_66full',
+  './style.css?v=20261021_tts',
+  './app.js?v=20261021_tts',
   './manifest.json',
   './header_logo.png?v=2',
-  './bible_db_66.js?v=20261019_66full',
+  './bible_db_66.js?v=20261021_tts',
   './bible_data/bible_db_easy.js',
   './bible_data/bible_db_hyundai.js',
   './bible_data/bible_db_niv.js',
