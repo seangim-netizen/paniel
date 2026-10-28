@@ -168,11 +168,16 @@ body {
   vertical-align: middle;
 }
 
-/* 퀵 드롭다운 메뉴 스타일 */
+/* 퀵 드롭다운 메뉴 스타일 - 오른쪽 재생 버튼 쪽까지 넓게 사용하여 긴 성경 이름(예레미야애가, 데살로니가전서 등) 잘림 방지 */
 .quick-nav-dropdowns {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
+  margin-left: 2px;
+  margin-right: 4px;
 }
 
 .quick-select {
@@ -181,17 +186,18 @@ body {
   background-color: transparent;
   border: none;
   color: var(--text-primary);
-  font-size: 1.08rem;
+  font-size: 1.04rem;
   font-weight: 800;
   cursor: pointer;
   outline: none;
-  padding: 4px 16px 4px 6px;
+  padding: 4px 14px 4px 4px;
   background-image: var(--select-arrow);
   background-repeat: no-repeat;
-  background-position: right 4px center;
+  background-position: right 3px center;
   background-size: 8px 6px;
   border-radius: 4px;
   transition: background-color var(--transition-speed);
+  white-space: nowrap;
 }
 
 .quick-select:hover, .quick-select:focus {
@@ -199,17 +205,23 @@ body {
 }
 
 #quickBookSelect {
-  max-width: 105px;
+  width: auto;
+  max-width: 165px;
+  flex-shrink: 0;
 }
 
 #quickChapterSelect {
-  max-width: 72px;
+  width: auto;
+  max-width: 82px;
   color: var(--accent-green);
+  flex-shrink: 0;
 }
 
 #quickVerseSelect {
-  max-width: 70px;
+  width: auto;
+  max-width: 78px;
   color: var(--accent-gold);
+  flex-shrink: 0;
 }
 
 .btn-icon {
@@ -1161,40 +1173,45 @@ textarea {
   }
 
   .header-logo-area {
-    margin-right: 2px;
+    margin-right: 1px;
     flex-shrink: 0;
   }
 
   .header-logo-img {
-    height: 20px;
+    height: 17px;
   }
 
   .quick-nav-dropdowns {
     gap: 2px;
     min-width: 0;
     flex: 1;
+    justify-content: flex-start;
+    margin-left: 1px;
+    margin-right: 2px;
   }
   
   #quickBookSelect {
-    max-width: 78px;
-    font-size: 0.86rem;
-    padding: 4px 10px 4px 2px;
+    width: auto;
+    max-width: 138px;
+    font-size: 0.88rem;
+    padding: 4px 11px 4px 2px;
     background-position: right 1px center;
     background-size: 6px 4px;
-    text-overflow: ellipsis;
   }
   
   #quickChapterSelect {
-    max-width: 52px;
-    font-size: 0.86rem;
+    width: auto;
+    max-width: 58px;
+    font-size: 0.88rem;
     padding: 4px 10px 4px 2px;
     background-position: right 1px center;
     background-size: 6px 4px;
   }
 
   #quickVerseSelect {
-    max-width: 52px;
-    font-size: 0.86rem;
+    width: auto;
+    max-width: 56px;
+    font-size: 0.88rem;
     padding: 4px 10px 4px 2px;
     background-position: right 1px center;
     background-size: 6px 4px;
@@ -1202,21 +1219,21 @@ textarea {
 
   .header-player {
     gap: 2px;
-    padding: 2px 4px;
+    padding: 1px 3px;
     border-radius: 12px;
     flex-shrink: 0;
   }
 
   .btn-header-player {
-    font-size: 0.78rem;
-    padding: 3px 6px;
+    font-size: 0.76rem;
+    padding: 3px 5px;
     white-space: nowrap;
   }
 
   #btnOpenBibleNewWin {
-    padding: 0 5px !important;
-    font-size: 0.68rem !important;
-    height: 26px !important;
+    padding: 0 4px !important;
+    font-size: 0.66rem !important;
+    height: 24px !important;
   }
 
   .btn-header-player-sub {
