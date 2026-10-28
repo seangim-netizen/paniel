@@ -146,6 +146,7 @@ const rangeModal = document.getElementById("rangeModal");
 // DOM 요소 참조
 const quickBookSelect = document.getElementById("quickBookSelect");
 const quickChapterSelect = document.getElementById("quickChapterSelect");
+const quickVerseSelect = document.getElementById("quickVerseSelect");
 const btnBookSelectorModal = document.getElementById("btnBookSelectorModal");
 const btnSettings = document.getElementById("btnSettings");
 const btnSearch = document.getElementById("btnSearch");
@@ -178,6 +179,13 @@ const chaptersView = document.getElementById("chaptersView");
 const btnBackToBooks = document.getElementById("btnBackToBooks");
 const selectedBookTitle = document.getElementById("selectedBookTitle");
 const chaptersGrid = document.getElementById("chaptersGrid");
+const versesView = document.getElementById("versesView");
+const btnBackToChapters = document.getElementById("btnBackToChapters");
+const btnSelectWholeChapter = document.getElementById("btnSelectWholeChapter");
+const selectedChapterTitle = document.getElementById("selectedChapterTitle");
+const versesGrid = document.getElementById("versesGrid");
+let modalSelectedBook = null;
+let modalSelectedChapter = 1;
 
 const settingsModal = document.getElementById("settingsModal");
 const btnCloseSettingsModal = document.getElementById("btnCloseSettingsModal");
@@ -411,6 +419,21 @@ function initQuickSelectors() {
   updateQuickChapterSelector();
 }
 
+function getChapterVerseCount(bookName, chapterNum) {
+  const chStr = String(chapterNum);
+  const pCode = state.primaryTranslation || "KG";
+  const pVarName = TRANSLATION_MAP[pCode] && TRANSLATION_MAP[pCode].varName;
+  const pDb = (pVarName && window[pVarName]) || window.BIBLE_66_DB_KG || window.BIBLE_66_DB_SB;
+  if (pDb && pDb[bookName] && Array.isArray(pDb[bookName][chStr])) {
+    return pDb[bookName][chStr].length;
+  }
+  const fallbackDb = window.BIBLE_66_DB_KG || window.BIBLE_66_DB_SB;
+  if (fallbackDb && fallbackDb[bookName] && Array.isArray(fallbackDb[bookName][chStr])) {
+    return fallbackDb[bookName][chStr].length;
+  }
+  return 0;
+}
+
 function updateQuickChapterSelector() {
   const book = BIBLE_METADATA.find(b => b.name === state.currentBook);
   if (!book) return;
@@ -425,6 +448,21 @@ function updateQuickChapterSelector() {
   }
   
   quickChapterSelect.value = state.currentChapter;
+  updateQuickVerseSelector();
+}
+
+function updateQuickVerseSelector(totalVersesOverride) {
+  if (!quickVerseSelect) return;
+  const count = totalVersesOverride || getChapterVerseCount(state.currentBook, state.currentChapter) || 1;
+  quickVerseSelect.innerHTML = "";
+  for (let v = 1; v <= count; v++) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = `${v}절`;
+    quickVerseSelect.appendChild(opt);
+  }
+  const targetV = (selectedVerseNum && selectedVerseNum >= 1 && selectedVerseNum <= count) ? selectedVerseNum : 1;
+  quickVerseSelect.value = targetV;
 }
 
 // 이벤트 리스너 세팅
@@ -444,9 +482,38 @@ function setupEventListeners() {
     stopTTS();
     selectedVerseNum = null;
     state.currentChapter = parseInt(e.target.value);
+    updateQuickVerseSelector();
     saveSettings();
     renderBible();
   });
+
+  if (quickVerseSelect) {
+    quickVerseSelect.addEventListener("change", (e) => {
+      const vNum = parseInt(e.target.value, 10);
+      if (!vNum) return;
+      selectedVerseNum = vNum;
+      if (isTTSSpeaking) {
+        jumpToTTSVerse(vNum);
+        return;
+      }
+      applySelectedVerseHighlight();
+      let targetCard = bibleViewerEl.querySelector(`.verse-card[data-verse="${vNum}"]`);
+      if (!targetCard) {
+        const cards = bibleViewerEl.querySelectorAll(".verse-card");
+        for (const c of cards) {
+          const vs = parseInt(c.getAttribute("data-verse"), 10);
+          const ve = parseInt(c.getAttribute("data-verse-end"), 10) || vs;
+          if (vs <= vNum && vNum <= ve) {
+            targetCard = c;
+            break;
+          }
+        }
+      }
+      if (targetCard) {
+        targetCard.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }
 
   // 네비게이션
   btnPrevChapter.addEventListener("click", () => {
@@ -510,6 +577,24 @@ function setupEventListeners() {
   tabOT.addEventListener("click", () => toggleOTNT("OT"));
   tabNT.addEventListener("click", () => toggleOTNT("NT"));
   btnBackToBooks.addEventListener("click", showBooksListInModal);
+  if (btnBackToChapters) {
+    btnBackToChapters.addEventListener("click", () => {
+      if (modalSelectedBook) showChaptersListInModal(modalSelectedBook);
+      else showBooksListInModal();
+    });
+  }
+  if (btnSelectWholeChapter) {
+    btnSelectWholeChapter.addEventListener("click", () => {
+      if (!modalSelectedBook) return;
+      stopTTS();
+      selectedVerseNum = null;
+      state.currentBook = modalSelectedBook.name;
+      state.currentChapter = modalSelectedChapter || 1;
+      saveSettings();
+      closeModal(bookModal);
+      renderBible();
+    });
+  }
   
   // 설정 모달 기능
   btnFontSizeDecrease.addEventListener("click", () => adjustFontSize(-10));
@@ -665,6 +750,9 @@ function openBookModal() {
 function toggleOTNT(type) {
   tabOT.classList.toggle("active", type === "OT");
   tabNT.classList.toggle("active", type === "NT");
+  booksGrid.classList.remove("hidden");
+  chaptersView.classList.add("hidden");
+  if (versesView) versesView.classList.add("hidden");
   renderBooksGrid(type);
 }
 
@@ -672,6 +760,7 @@ function toggleOTNT(type) {
 function showBooksListInModal() {
   booksGrid.classList.remove("hidden");
   chaptersView.classList.add("hidden");
+  if (versesView) versesView.classList.add("hidden");
   const activeType = tabOT.classList.contains("active") ? "OT" : "NT";
   renderBooksGrid(activeType);
 }
@@ -682,6 +771,10 @@ function renderBooksGrid(type) {
   filtered.forEach(book => {
     const btn = document.createElement("button");
     btn.className = "btn-book";
+    if (book.name === state.currentBook) {
+      btn.style.borderColor = "var(--accent-green)";
+      btn.style.fontWeight = "800";
+    }
     btn.textContent = book.name;
     btn.addEventListener("click", () => showChaptersListInModal(book));
     booksGrid.appendChild(btn);
@@ -690,9 +783,12 @@ function renderBooksGrid(type) {
 
 // 책의 장 격자 리스트 노출
 function showChaptersListInModal(book) {
+  modalSelectedBook = book;
   booksGrid.classList.add("hidden");
   chaptersView.classList.remove("hidden");
-  selectedBookTitle.textContent = book.name;
+  if (versesView) versesView.classList.add("hidden");
+  const unit = getChapterLabel(book.name);
+  selectedBookTitle.textContent = `${book.name} (${unit} 선택)`;
   
   chaptersGrid.innerHTML = "";
   for (let i = 1; i <= book.chapters; i++) {
@@ -701,15 +797,64 @@ function showChaptersListInModal(book) {
     const isRead = readHistory[book.name] && readHistory[book.name].includes(i);
     btn.textContent = isRead ? `${i} ✓` : `${i}`;
     if (isRead) btn.style.color = "var(--accent-green)";
+    if (book.name === state.currentBook && i === state.currentChapter) {
+      btn.style.borderColor = "var(--accent-green)";
+      btn.style.fontWeight = "800";
+    }
     
     btn.addEventListener("click", () => {
+      showVersesListInModal(book, i);
+    });
+    chaptersGrid.appendChild(btn);
+  }
+}
+
+// 장의 구절(절) 격자 리스트 노출
+function showVersesListInModal(book, chapterNum) {
+  modalSelectedBook = book;
+  modalSelectedChapter = chapterNum;
+  const unit = getChapterLabel(book.name);
+  const totalVerses = getChapterVerseCount(book.name, chapterNum);
+
+  if (!versesView || !versesGrid || totalVerses <= 0) {
+    stopTTS();
+    selectedVerseNum = null;
+    state.currentBook = book.name;
+    state.currentChapter = chapterNum;
+    saveSettings();
+    closeModal(bookModal);
+    renderBible();
+    return;
+  }
+
+  booksGrid.classList.add("hidden");
+  chaptersView.classList.add("hidden");
+  versesView.classList.remove("hidden");
+
+  if (selectedChapterTitle) {
+    selectedChapterTitle.textContent = `${book.name} ${chapterNum}${unit} - 구절 선택 (총 ${totalVerses}절)`;
+  }
+
+  versesGrid.innerHTML = "";
+  for (let v = 1; v <= totalVerses; v++) {
+    const btn = document.createElement("button");
+    btn.className = "btn-chapter";
+    btn.textContent = `${v}절`;
+    if (book.name === state.currentBook && chapterNum === state.currentChapter && selectedVerseNum === v) {
+      btn.style.borderColor = "var(--accent-green)";
+      btn.style.color = "var(--accent-green)";
+      btn.style.fontWeight = "800";
+    }
+    btn.addEventListener("click", () => {
+      stopTTS();
       state.currentBook = book.name;
-      state.currentChapter = i;
+      state.currentChapter = chapterNum;
+      selectedVerseNum = v;
       saveSettings();
       closeModal(bookModal);
       renderBible();
     });
-    chaptersGrid.appendChild(btn);
+    versesGrid.appendChild(btn);
   }
 }
 
@@ -918,6 +1063,7 @@ function executeRender() {
   
   const primaryVerses = pDb[book][chStr];
   const totalVerses = primaryVerses.length;
+  updateQuickVerseSelector(totalVerses);
   
   // 대조역본
   let secondaryVerses = null;
@@ -1069,7 +1215,7 @@ function executeRender() {
   const appContent = document.querySelector(".app-content");
   if (appContent) {
     if (selectedVerseNum !== null) {
-      const targetCard = bibleViewerEl.querySelector(`.verse-card[data-verse="${selectedVerseNum}"]`);
+      const targetCard = findVerseCardByNumber(selectedVerseNum);
       if (targetCard) {
         setTimeout(() => {
           targetCard.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1084,14 +1230,28 @@ function executeRender() {
 }
 
 // ── 선택 구절 하이라이트 적용 헬퍼 ──────────────────────────────────
+function findVerseCardByNumber(vNum) {
+  if (vNum === null || vNum === undefined) return null;
+  let card = bibleViewerEl.querySelector(`.verse-card[data-verse="${vNum}"]`);
+  if (card) return card;
+  const cards = bibleViewerEl.querySelectorAll(".verse-card");
+  for (const c of cards) {
+    const vs = parseInt(c.getAttribute("data-verse"), 10);
+    const ve = parseInt(c.getAttribute("data-verse-end"), 10) || vs;
+    if (vs <= vNum && vNum <= ve) return c;
+  }
+  return null;
+}
+
 function applySelectedVerseHighlight() {
   bibleViewerEl.querySelectorAll(".is-selected").forEach(el => {
     el.classList.remove("is-selected");
   });
   if (selectedVerseNum !== null) {
-    const targetCard = bibleViewerEl.querySelector(`.verse-card[data-verse="${selectedVerseNum}"]`);
+    const targetCard = findVerseCardByNumber(selectedVerseNum);
     if (targetCard) {
       targetCard.classList.add("is-selected");
+      if (quickVerseSelect) quickVerseSelect.value = selectedVerseNum;
     } else {
       selectedVerseNum = null;
     }
@@ -1930,6 +2090,9 @@ function speakNextTTS(fromAutoEnd = false) {
   const item = ttsSpeechItems[currentTTSIndex];
   if (item && item.element) {
     item.element.classList.add("is-reading-speaking");
+    if (quickVerseSelect && item.verse) {
+      quickVerseSelect.value = item.verse;
+    }
     if (!document.hidden) {
       item.element.scrollIntoView({ behavior: "smooth", block: "center" });
     }

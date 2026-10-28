@@ -27,6 +27,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const tabButtons = document.querySelectorAll('.nav-tab');
   const viewSections = document.querySelectorAll('.view-section');
 
+  function updateBibleViewHeight() {
+    const viewBible = document.getElementById('view-bible');
+    const hdr = document.querySelector('header');
+    if (viewBible && hdr) {
+      const hdrRect = hdr.getBoundingClientRect();
+      const hdrH = Math.ceil(hdrRect.height) || hdr.offsetHeight || 102;
+      viewBible.style.height = `calc(100dvh - ${hdrH}px)`;
+    }
+  }
+  window.addEventListener('resize', () => {
+    if (document.body.classList.contains('bible-view-active')) {
+      updateBibleViewHeight();
+    }
+  });
+
   // --- 탭 전환 로직 ---
   function switchTab(tabName) {
     tabButtons.forEach(btn => {
@@ -48,8 +63,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (tabName === 'bible') {
-      window.scrollTo({ top: 0 });
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
       document.body.classList.add('bible-view-active');
+      updateBibleViewHeight();
     } else {
       document.body.classList.remove('bible-view-active');
     }

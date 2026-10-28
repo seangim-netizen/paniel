@@ -199,12 +199,17 @@ body {
 }
 
 #quickBookSelect {
-  max-width: 110px;
+  max-width: 105px;
 }
 
 #quickChapterSelect {
-  max-width: 80px;
+  max-width: 72px;
   color: var(--accent-green);
+}
+
+#quickVerseSelect {
+  max-width: 70px;
+  color: var(--accent-gold);
 }
 
 .btn-icon {
@@ -232,7 +237,9 @@ body {
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 20px;
-  padding: 2px 8px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .btn-header-player {
@@ -240,10 +247,12 @@ body {
   border: none;
   color: var(--accent-green);
   font-size: 0.85rem;
-  font-weight: bold;
+  font-weight: 800;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-header-player-sub {
@@ -1151,35 +1160,63 @@ textarea {
     gap: 4px;
   }
 
+  .header-logo-area {
+    margin-right: 2px;
+    flex-shrink: 0;
+  }
+
   .header-logo-img {
-    height: 22px;
+    height: 20px;
+  }
+
+  .quick-nav-dropdowns {
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
   }
   
   #quickBookSelect {
-    max-width: 85px;
-    font-size: 0.92rem;
-    padding: 4px 10px 4px 1px;
+    max-width: 78px;
+    font-size: 0.86rem;
+    padding: 4px 10px 4px 2px;
     background-position: right 1px center;
-    background-size: 7px 5px;
+    background-size: 6px 4px;
+    text-overflow: ellipsis;
   }
   
   #quickChapterSelect {
-    max-width: 58px;
-    font-size: 0.92rem;
-    padding: 4px 10px 4px 1px;
+    max-width: 52px;
+    font-size: 0.86rem;
+    padding: 4px 10px 4px 2px;
     background-position: right 1px center;
-    background-size: 7px 5px;
+    background-size: 6px 4px;
+  }
+
+  #quickVerseSelect {
+    max-width: 52px;
+    font-size: 0.86rem;
+    padding: 4px 10px 4px 2px;
+    background-position: right 1px center;
+    background-size: 6px 4px;
   }
 
   .header-player {
-    gap: 1px;
-    padding: 1px 3px;
+    gap: 2px;
+    padding: 2px 4px;
     border-radius: 12px;
+    flex-shrink: 0;
   }
 
   .btn-header-player {
-    font-size: 0.75rem;
-    padding: 2px 4px;
+    font-size: 0.78rem;
+    padding: 3px 6px;
+    white-space: nowrap;
+  }
+
+  #btnOpenBibleNewWin {
+    padding: 0 5px !important;
+    font-size: 0.68rem !important;
+    height: 26px !important;
   }
 
   .btn-header-player-sub {

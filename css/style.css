@@ -324,6 +324,19 @@ body.bible-view-active {
   overflow: hidden !important;
 }
 
+body.bible-view-active main {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  max-width: 100% !important;
+}
+
+#view-bible:not(.hidden) {
+  margin-top: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  width: 100% !important;
+}
+
 /* 성경 탭(iframe)이 다른 탭으로 전환되어도 백그라운드 성경 오디오(TTS)가 끊기지 않도록 display:none 대신 화면 밖 배치 유지 */
 #view-bible.hidden {
   display: block !important;
