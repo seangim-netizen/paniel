@@ -327,8 +327,10 @@ body {
   left: 0;
   right: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 /* 상단 대조 바가 켜져 있을 때의 콘텐츠 영역 오프셋 자동조절 */
@@ -1894,4 +1896,20 @@ body.tts-active .range-repeat-badge {
   font-size: 0.78rem;
   color: var(--text-secondary);
   text-align: center;
+}
+
+/* ↔️ 좌우 스와이프 장 이동 전환 효과 */
+@keyframes bibleSwipeFromRight {
+  from { opacity: 0.35; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes bibleSwipeFromLeft {
+  from { opacity: 0.35; transform: translateX(-28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.bible-viewer.swipe-anim-next {
+  animation: bibleSwipeFromRight 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.bible-viewer.swipe-anim-prev {
+  animation: bibleSwipeFromLeft 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }

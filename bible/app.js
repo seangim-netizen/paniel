@@ -258,6 +258,92 @@ function getChapterLabel(bookName) {
   return bookName === "시편" ? "편" : "장";
 }
 
+// 영어 성경 낭독 시 장 도입부를 자연스러운 영어 성경 권명으로 읽기 위한 매핑
+const ENGLISH_BOOK_NAMES = {
+  "창세기": "Genesis",
+  "출애굽기": "Exodus",
+  "레위기": "Leviticus",
+  "민수기": "Numbers",
+  "신명기": "Deuteronomy",
+  "여호수아": "Joshua",
+  "사사기": "Judges",
+  "룻기": "Ruth",
+  "사무엘상": "First Samuel",
+  "사무엘하": "Second Samuel",
+  "열왕기상": "First Kings",
+  "열왕기하": "Second Kings",
+  "역대상": "First Chronicles",
+  "역대하": "Second Chronicles",
+  "에스라": "Ezra",
+  "느헤미야": "Nehemiah",
+  "에스더": "Esther",
+  "욥기": "Job",
+  "시편": "Psalm",
+  "잠언": "Proverbs",
+  "전도서": "Ecclesiastes",
+  "아가": "Song of Songs",
+  "이사야": "Isaiah",
+  "예레미야": "Jeremiah",
+  "예레미야애가": "Lamentations",
+  "에스겔": "Ezekiel",
+  "다니엘": "Daniel",
+  "호세아": "Hosea",
+  "요엘": "Joel",
+  "아모스": "Amos",
+  "오바디야": "Obadiah",
+  "오바댜": "Obadiah",
+  "요나": "Jonah",
+  "미가": "Micah",
+  "나훔": "Nahum",
+  "하박국": "Habakkuk",
+  "스바냐": "Zephaniah",
+  "학개": "Haggai",
+  "스가랴": "Zechariah",
+  "말라기": "Malachi",
+  "마태복음": "Matthew",
+  "마가복음": "Mark",
+  "누가복음": "Luke",
+  "요한복음": "John",
+  "사도행전": "Acts",
+  "로마서": "Romans",
+  "고린도전서": "First Corinthians",
+  "고린도후서": "Second Corinthians",
+  "갈라디아서": "Galatians",
+  "에베소서": "Ephesians",
+  "빌립보서": "Philippians",
+  "골로새서": "Colossians",
+  "데살로니가전서": "First Thessalonians",
+  "데살로니가후서": "Second Thessalonians",
+  "디모데전서": "First Timothy",
+  "디모데후서": "Second Timothy",
+  "디도서": "Titus",
+  "빌레몬서": "Philemon",
+  "히브리서": "Hebrews",
+  "야고보서": "James",
+  "베드로전서": "First Peter",
+  "베드로후서": "Second Peter",
+  "요한1서": "First John",
+  "요한일서": "First John",
+  "요한2서": "Second John",
+  "요한이서": "Second John",
+  "요한3서": "Third John",
+  "요한삼서": "Third John",
+  "유다서": "Jude",
+  "요한계시록": "Revelation"
+};
+
+function getSpokenChapterIntro(bookName, chapterNum, isEnglish) {
+  if (isEnglish) {
+    const engBook = ENGLISH_BOOK_NAMES[bookName] || "Chapter";
+    if (bookName === "시편") {
+      return `Psalm ${chapterNum}.`;
+    }
+    return `${engBook} chapter ${chapterNum}.`;
+  }
+  const unit = getChapterLabel(bookName);
+  return `${bookName} ${chapterNum}${unit}.`;
+}
+
 // 성경 DB 책 이름 표준화 (요한일서<->요한1서, 요한이서<->요한2서, 요한삼서<->요한3서, 오바댜<->오바디야 양방향 호환 보장)
 const BOOK_NAME_ALIASES = [
   ["요한1서", "요한일서"],
@@ -680,9 +766,10 @@ function setupEventListeners() {
     if (e.target === rangeModal) closeModal(rangeModal);
   });
 
-  // 📋 구절 꾸욱 눌러 복사 + 🎯 구간 반복 듣기
+  // 📋 구절 꾸욱 눌러 복사 + 🎯 구간 반복 듣기 + ↔️ 좌우 스와이프 장 이동
   setupVerseLongPress();
   setupRangeRepeatControls();
+  setupChapterSwipe();
 
   // 통독 계획 서브 탭 전환
   if (tabProgressBoard && tabReadingPlan) {
@@ -859,7 +946,7 @@ function showVersesListInModal(book, chapterNum) {
 }
 
 // 장 네비게이션
-function navigateChapter(direction) {
+function navigateChapter(direction, swipeDir) {
   const currentBookIndex = BIBLE_METADATA.findIndex(b => b.name === state.currentBook);
   if (currentBookIndex === -1) return;
   
@@ -888,9 +975,15 @@ function navigateChapter(direction) {
     state.currentChapter = targetChapter;
   }
   
+  window.lastChapterSwipeDir = swipeDir || null;
   saveSettings();
   renderBible();
-  document.querySelector(".app-content").scrollTop = 0;
+  const appContentEl = document.querySelector(".app-content");
+  if (appContentEl) appContentEl.scrollTop = 0;
+  if (swipeDir) {
+    const unit = getChapterLabel(state.currentBook);
+    showToast(`📖 ${state.currentBook} ${state.currentChapter}${unit}`);
+  }
 }
 
 // 현재 장 통독 완료 체크 토글
@@ -1209,6 +1302,17 @@ function executeRender() {
   applyRepeatRangeHighlight();
   updateRangeBadge();
 
+  if (window.lastChapterSwipeDir && bibleViewerEl) {
+    const animClass = window.lastChapterSwipeDir === "next" ? "swipe-anim-next" : "swipe-anim-prev";
+    window.lastChapterSwipeDir = null;
+    bibleViewerEl.classList.remove("swipe-anim-next", "swipe-anim-prev");
+    void bibleViewerEl.offsetWidth;
+    bibleViewerEl.classList.add(animClass);
+    setTimeout(() => {
+      bibleViewerEl.classList.remove("swipe-anim-next", "swipe-anim-prev");
+    }, 240);
+  }
+
   // 스크롤 위치 결정:
   //   선택 구절 있음 → 그 구절 위치로 스크롤
   //   선택 구절 없음 → 장 처음으로 스크롤
@@ -1498,6 +1602,10 @@ function preprocessSpeechText(rawText) {
       .replace(/\[[^\]]*\]/g, " ")
       .replace(/<[^>]*>/g, " ")
       .replace(/[○◯●◎◇◆□■△▲▽▼☆★]/g, " ")
+      .replace(/--+/g, ", ")
+      .replace(/\bLORD\b/g, "Lord")
+      .replace(/\bGOD\b/g, "God")
+      .replace(/\bSelah\.?/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -1507,14 +1615,14 @@ function preprocessSpeechText(rawText) {
 function getTtsCacheKey(rawText) {
   const processed = preprocessSpeechText(rawText);
   const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(processed);
-  return (isEnglish ? "en|" : "ko|") + processed;
+  return (isEnglish ? "en-US|" : "ko|") + processed;
 }
 
 function getTtsApiUrl(rawText, useBackupEndpoint) {
   const processed = preprocessSpeechText(rawText);
   const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(processed);
-  const tl = isEnglish ? "en" : "ko";
-  const safeText = processed.substring(0, 200);
+  const tl = isEnglish ? "en-US" : "ko";
+  const safeText = processed.substring(0, 800);
   const baseUrl = useBackupEndpoint
     ? "https://login-church-test.vercel.app/api/tts"
     : "https://login-church.vercel.app/api/tts";
@@ -1616,7 +1724,7 @@ function prefetchNextChapterFirstVerses() {
       if (!vText) continue;
       const isEng = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(vText);
       const speakStr = (i === 0)
-        ? (isEng ? `${nextBook} ${nextChapter}. ${vText}` : `${nextBook} ${nextChapter}${unit}. ${vText}`)
+        ? `${getSpokenChapterIntro(nextBook, nextChapter, isEng)} ${vText}`
         : vText;
       pChain = pChain.then(() => prefetchRawSpeechText(speakStr));
     }
@@ -1790,7 +1898,7 @@ function executeStartTTS(startVerse) {
     if (textToSpeak) {
       const isEnglish = !/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(textToSpeak);
       const speakText = (verseNum === 1)
-        ? (isEnglish ? `${book} ${chapter}. ${textToSpeak}` : `${book} ${chapter}${unit}. ${textToSpeak}`)
+        ? `${getSpokenChapterIntro(book, chapter, isEnglish)} ${textToSpeak}`
         : textToSpeak;
 
       ttsSpeechItems.push({
@@ -1842,13 +1950,24 @@ function createConfiguredUtterance(item) {
   if (isEnglish) {
     utterance.lang = "en-US";
     if (speechVoices.length > 0) {
-      const preferredEnVoices = ["Google US English", "Microsoft David", "Microsoft Zira", "en-US", "en"];
+      const noveltyNames = /Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Deranged|Good News|Hysterical|Jester|Organ|Superstar|Trinoids|Whisper|Wobble|Zarvox|Fred|Junior|Kathy|Ralph/i;
+      const enVoices = speechVoices.filter(v => /^en[-_]/i.test(v.lang || "") && !noveltyNames.test(v.name || ""));
+      const preferredEnVoices = [
+        "Ava (Premium)", "Ava (Enhanced)", "Samantha (Enhanced)", "Allison (Enhanced)",
+        "Alex", "Samantha", "Ava", "Allison", "Daniel", "Karen", "Aaron", "Nicky",
+        "Google US English", "Microsoft Aria", "Microsoft Guy", "Microsoft Jenny",
+        "Microsoft Andrew", "Microsoft Brian", "Microsoft David", "Microsoft Zira"
+      ];
+      let picked = null;
       for (const pref of preferredEnVoices) {
-        const selectedVoice = speechVoices.find(v => v.name.includes(pref) || v.lang.includes(pref));
-        if (selectedVoice) {
-          utterance.voice = selectedVoice;
-          break;
-        }
+        picked = enVoices.find(v => (v.name || "").includes(pref));
+        if (picked) break;
+      }
+      if (!picked) {
+        picked = enVoices.find(v => /en[-_]US/i.test(v.lang || "")) || enVoices[0];
+      }
+      if (picked) {
+        utterance.voice = picked;
       }
     }
   } else {
@@ -3289,6 +3408,105 @@ function endLongPress() {
   clearTimeout(lp.timer);
   setTimeout(() => lp.card.classList.remove("long-press-armed"), 160);
   longPress = null;
+}
+
+/* ==========================================================================
+   ↔️ 좌우 스와이프 장 이동 (왼쪽 스와이프 → 다음 장, 오른쪽 스와이프 → 이전 장)
+   - 상하 스크롤 및 구절 꾸욱 눌러 복사와 충돌하지 않도록 수평 제스처만 정밀 감지
+   ========================================================================== */
+function setupChapterSwipe() {
+  const swipeTarget = document.querySelector(".app-content") || bibleViewerEl;
+  if (!swipeTarget) return;
+
+  const SWIPE_MIN_X = 52;
+  const SWIPE_DIRECTION_RATIO = 1.55;
+  const SWIPE_MAX_DURATION_MS = 750;
+
+  let swipeState = null;
+
+  const isInteractiveTarget = (el) => {
+    if (!el || !el.closest) return false;
+    return Boolean(el.closest("select, input, textarea, button, a, .modal.active"));
+  };
+
+  swipeTarget.addEventListener("touchstart", (e) => {
+    if (!e.touches || e.touches.length !== 1) {
+      swipeState = null;
+      return;
+    }
+    if (document.querySelector(".modal.active") || isInteractiveTarget(e.target)) {
+      swipeState = null;
+      return;
+    }
+    const t = e.touches[0];
+    swipeState = {
+      startX: t.clientX,
+      startY: t.clientY,
+      lastX: t.clientX,
+      lastY: t.clientY,
+      startTime: Date.now(),
+      axis: null
+    };
+  }, { passive: true });
+
+  swipeTarget.addEventListener("touchmove", (e) => {
+    if (!swipeState || !e.touches || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - swipeState.startX;
+    const dy = t.clientY - swipeState.startY;
+    swipeState.lastX = t.clientX;
+    swipeState.lastY = t.clientY;
+
+    if (!swipeState.axis && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      if (Math.abs(dx) > Math.abs(dy) * SWIPE_DIRECTION_RATIO) {
+        swipeState.axis = "x";
+        cancelLongPress();
+      } else {
+        swipeState.axis = "y";
+      }
+    } else if (swipeState.axis === "x") {
+      cancelLongPress();
+    }
+  }, { passive: true });
+
+  swipeTarget.addEventListener("touchend", () => {
+    if (!swipeState) return;
+    const st = swipeState;
+    swipeState = null;
+
+    if (st.axis !== "x") return;
+    if (longPress && longPress.armed) return;
+    if (document.querySelector(".modal.active")) return;
+
+    const dx = st.lastX - st.startX;
+    const dy = st.lastY - st.startY;
+    const elapsed = Date.now() - st.startTime;
+
+    if (elapsed > SWIPE_MAX_DURATION_MS) return;
+    if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) < Math.abs(dy) * SWIPE_DIRECTION_RATIO) return;
+
+    // 스와이프 직후 구절 클릭/선택 이벤트가 발화하지 않도록 차단
+    suppressVerseClickUntil = Date.now() + 400;
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+    }
+    cancelLongPress();
+    stopTTS();
+    selectedVerseNum = null;
+
+    if (dx < 0) {
+      // 오른쪽에서 왼쪽으로 스와이프 → 다음 장
+      navigateChapter(1, "next");
+    } else {
+      // 왼쪽에서 오른쪽으로 스와이프 → 이전 장
+      navigateChapter(-1, "prev");
+    }
+  }, { passive: true });
+
+  swipeTarget.addEventListener("touchcancel", () => {
+    swipeState = null;
+  }, { passive: true });
 }
 
 // 역본 이름에서 "(영어)" 같은 부가 표기 제거
