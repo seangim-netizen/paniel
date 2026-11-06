@@ -3,10 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>📖 김시웅 권사 성경통독일기장</title>
-  <link rel="stylesheet" href="style.css?v=20261106_1">
+  <title>📖 성경 66권 다역본 통독</title>
+  <link rel="stylesheet" href="style.css?v=20261106_2">
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="app_logo.png">
+  <link rel="apple-touch-icon" href="app_logo.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="성경 66권">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body class="theme-sepia">
@@ -248,11 +251,9 @@
         </div>
 
         <div class="setting-item">
-          <label>스마트폰 무선 테스트</label>
-          <p class="setting-desc">동일한 Wi-Fi 환경의 스마트폰으로 아래 주소에 접속하거나 QR코드를 스캔하세요.</p>
-          <div id="mobileTestArea" style="text-align: center; margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 6px; font-size: 0.9rem;">
-            <!-- JS에서 동적 주소 및 QR코드가 렌더링됩니다 -->
-          </div>
+          <label>성경 웹앱 공유 및 홈 화면 추가</label>
+          <p class="setting-desc">누구나 링크만 있으면 설치 없이 9개 역본 성경과 오디오 낭독을 이용할 수 있습니다.</p>
+          <button id="btnShareBibleApp" class="btn-action">🔗 성경앱 링크 주소 복사</button>
         </div>
       </div>
     </div>
@@ -341,6 +342,6 @@
   <script src="./bible_db_66.js?v=20261106_1"></script>
   
   <!-- 애플리케이션 로직 -->
-  <script src="app.js?v=20261106_1"></script>
+  <script src="app.js?v=20261106_2"></script>
 </body>
 </html>

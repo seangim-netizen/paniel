@@ -374,6 +374,13 @@ function normalizeAllLoadedBibleDbs() {
 
 // 앱 로드 시 초기화
 function init() {
+  // 단독 웹앱으로 열렸을 때는 '↗️ 새창' 버튼 숨김 (iframe 내부일 때만 표시)
+  try {
+    if (window.self === window.top) {
+      const btnNewWin = document.getElementById("btnOpenBibleNewWin");
+      if (btnNewWin) btnNewWin.style.display = "none";
+    }
+  } catch (e) {}
   normalizeAllLoadedBibleDbs();
   loadSettings();
   loadNotes();
@@ -730,6 +737,15 @@ function setupEventListeners() {
   } catch (err) {}
   btnExportNotes.addEventListener("click", exportNotesToClipboard);
   btnCopyBackupText.addEventListener("click", copyBackupTextAction); // 백업 텍스트 복사 버튼 연동
+  const btnShareBibleApp = document.getElementById("btnShareBibleApp");
+  if (btnShareBibleApp) {
+    btnShareBibleApp.addEventListener("click", () => {
+      const shareUrl = "https://loginbible.vercel.app";
+      copyTextToClipboard(shareUrl).then(() => {
+        showToast("🔗 성경앱 링크(https://loginbible.vercel.app)가 복사되었습니다!");
+      });
+    });
+  }
   
   // 메모 모달 기능
   btnSaveNote.addEventListener("click", saveNoteAction);

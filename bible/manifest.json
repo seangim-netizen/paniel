@@ -1,15 +1,15 @@
 {
-  "name": "개인용 성경앱",
-  "short_name": "성경앱",
-  "description": "오프라인(비행기모드) 및 다국어 대조 낭독을 지원하는 성경",
-  "start_url": "index.html",
+  "name": "성경 66권 다역본 통독",
+  "short_name": "성경 66권",
+  "description": "한글·영어 9개 역본 대조, 오디오 낭독, 구간반복, 통독표를 지원하는 성경 웹앱",
+  "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#fbf6ef",
   "theme_color": "#8b5a2b",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3004/3004617.png",
+      "src": "app_logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
