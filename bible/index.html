@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>📖 성경 66권 다역본 통독</title>
-  <link rel="stylesheet" href="style.css?v=20261106_2">
+  <link rel="stylesheet" href="style.css?v=20261106_3">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="app_logo.png">
   <link rel="apple-touch-icon" href="app_logo.png">
@@ -38,13 +38,16 @@
       </div>
     </div>
     
-    <!-- 2행: 성경 보조 도구 버튼 4개 -->
+    <!-- 2행: 성경 보조 도구 및 글자크기·밝게/어둡게 퀵 컨트롤 -->
     <div class="header-row header-row-bottom">
       <button id="btnBookSelectorModal" class="btn-header-action" title="성경 목록 모달">성경선택</button>
       <button id="btnSearch" class="btn-header-action" title="성경 검색">성경검색</button>
       <button id="btnProgress" class="btn-header-action" title="통독 현황표">통독현황</button>
-      <button id="btnSettings" class="btn-header-action" title="설정">환경설정</button>
       <button id="btnRangeRepeat" class="btn-header-action btn-range-action" title="구간 반복 듣기 (예: 12~20절)">구간반복</button>
+      <button id="btnQuickFontDec" class="btn-header-action btn-quick-compact" title="글자 크기 축소">가-</button>
+      <button id="btnQuickFontInc" class="btn-header-action btn-quick-compact" title="글자 크기 확대">가+</button>
+      <button id="btnQuickTheme" class="btn-header-action btn-quick-theme" title="밝게 / 어둡게 전환">어둡게</button>
+      <button id="btnSettings" class="btn-header-action btn-quick-icon" title="환경설정 및 메모 백업">⚙️</button>
     </div>
   </header>
 
@@ -342,6 +345,6 @@
   <script src="./bible_db_66.js?v=20261106_1"></script>
   
   <!-- 애플리케이션 로직 -->
-  <script src="app.js?v=20261106_2"></script>
+  <script src="app.js?v=20261106_3"></script>
 </body>
 </html>

@@ -1,9 +1,9 @@
-const CACHE_NAME = 'bible-app-cache-v14-20261106-2';
+const CACHE_NAME = 'bible-app-cache-v15-20261106-3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './style.css?v=20261106_2',
-  './app.js?v=20261106_2',
+  './style.css?v=20261106_3',
+  './app.js?v=20261106_3',
   './manifest.json',
   './header_logo.png?v=2',
   './bible_db_66.js?v=20261106_1',

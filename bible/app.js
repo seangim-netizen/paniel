@@ -482,6 +482,11 @@ function applySettings() {
   
   primaryTransSelect.value = state.primaryTranslation;
   secondaryTransSelect.value = state.secondaryTranslation;
+
+  const btnQuickTheme = document.getElementById("btnQuickTheme");
+  if (btnQuickTheme) {
+    btnQuickTheme.textContent = state.theme === "theme-dark" ? "밝게" : "어둡게";
+  }
 }
 
 // 퀵 풀다운 셀렉터 세팅
@@ -689,9 +694,37 @@ function setupEventListeners() {
     });
   }
   
-  // 설정 모달 기능
+  // 설정 모달 및 상단 바 글자 크기 / 밝게·어둡게 퀵 버튼
   btnFontSizeDecrease.addEventListener("click", () => adjustFontSize(-10));
   btnFontSizeIncrease.addEventListener("click", () => adjustFontSize(10));
+  const btnQuickFontDec = document.getElementById("btnQuickFontDec");
+  if (btnQuickFontDec) {
+    btnQuickFontDec.addEventListener("click", () => {
+      adjustFontSize(-10);
+      showToast(`글자 크기: ${state.fontSize}%`);
+    });
+  }
+  const btnQuickFontInc = document.getElementById("btnQuickFontInc");
+  if (btnQuickFontInc) {
+    btnQuickFontInc.addEventListener("click", () => {
+      adjustFontSize(10);
+      showToast(`글자 크기: ${state.fontSize}%`);
+    });
+  }
+  const btnQuickTheme = document.getElementById("btnQuickTheme");
+  if (btnQuickTheme) {
+    btnQuickTheme.addEventListener("click", () => {
+      const nextTheme = state.theme === "theme-dark" ? "theme-light" : "theme-dark";
+      state.theme = nextTheme;
+      saveSettings();
+      applySettings();
+      const isDark = nextTheme === "theme-dark";
+      showToast(isDark ? "🌙 어둡게 모드로 전환되었습니다" : "☀️ 밝게 모드로 전환되었습니다");
+      try {
+        window.parent.postMessage({ type: "THEME_CHANGED", isDark }, "*");
+      } catch (err) {}
+    });
+  }
   themeBtns.forEach(btn => {
     btn.addEventListener("click", (e) => {
       state.theme = e.target.dataset.theme;
@@ -1606,6 +1639,13 @@ function preprocessKoreanTTS(text) {
   // 3. 자음 조사 및 단독 '갓' (예: "갓과", "갓도", "갓 지파", "갓 자손", "선지자 갓", "(갓)", "갓.")
   s = s.replace(/갓(?=[과도으로며의자지선])/g, "갇");
   s = s.replace(/(^|[^가-힣])갓(?=[^가-힣]|$)/g, "$1갇");
+
+  // 4. 복합명사+조사 '가' 및 '군인들이', '젊은이' 표준 발음 교정
+  s = s.replace(/(포도주|독주|방주|구주|심판주|소유주|상주|채주|보주|어주)가(?=\s|[.,?!]|$)/g, "$1 가");
+  s = s.replace(/나\s+주가(?=[,.?!])/g, "나주가");
+  s = s.replace(/군인들이/g, "구닌들이");
+  s = s.replace(/젊은이/g, "절므니");
+  s = s.replace(/젊은/g, "절믄");
 
   return s.replace(/\s+/g, " ").trim();
 }

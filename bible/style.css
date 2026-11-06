@@ -1913,3 +1913,50 @@ body.tts-active .range-repeat-badge {
 .bible-viewer.swipe-anim-prev {
   animation: bibleSwipeFromLeft 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* 상단 2행 글자크기(가-/가+) 및 밝게/어둡게 퀵 버튼 */
+.btn-header-action {
+  white-space: nowrap;
+}
+.btn-header-action.btn-quick-compact {
+  flex: 0.62;
+  min-width: 28px;
+  padding: 0 3px;
+  font-weight: 800;
+}
+.btn-header-action.btn-quick-theme {
+  flex: 0.78;
+  min-width: 38px;
+  padding: 0 4px;
+  font-weight: 800;
+}
+.btn-header-action.btn-quick-icon {
+  flex: 0.5;
+  min-width: 26px;
+  padding: 0 2px;
+  font-size: 0.88rem;
+}
+@media (max-width: 480px) {
+  .header-row-bottom {
+    gap: 2px;
+  }
+  .btn-header-action {
+    font-size: 0.76rem;
+    padding: 0 2px;
+  }
+  .btn-header-action.btn-quick-compact {
+    flex: 0.58;
+    min-width: 25px;
+    font-size: 0.74rem;
+  }
+  .btn-header-action.btn-quick-theme {
+    flex: 0.74;
+    min-width: 35px;
+    font-size: 0.74rem;
+  }
+  .btn-header-action.btn-quick-icon {
+    flex: 0.45;
+    min-width: 24px;
+    font-size: 0.8rem;
+  }
+}
